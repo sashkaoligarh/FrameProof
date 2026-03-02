@@ -36,6 +36,30 @@ export { parseVariantName } from './utils/variant-parser.js';
 export { fetchFigmaFile, fetchFigmaNodes, fetchFigmaImages, downloadImage, maskToken, FigmaApiError } from './api/client.js';
 export type { FetchOptions, ImageExportOptions } from './api/client.js';
 
+// MCP modules
+export { TokenCache } from './mcp/cache.js';
+export type { FetchResult, FetchCallback } from './mcp/cache.js';
+export { mapNodeToDetail } from './mcp/mappers/css-mapper.js';
+
+// MCP types
+export type {
+  CacheEntry,
+  NodeDetail,
+  TextSegment,
+  CSSMappedFill,
+  CSSMappedStroke,
+  CSSMappedEffect,
+  CSSMappedValue,
+  CSSMappedTypography,
+  LayoutInfo,
+  ComponentRef,
+  DocumentStructure,
+  PageSummary,
+  FrameSummary,
+  TokenSearchResult,
+  TokenMatch,
+} from './types/mcp.js';
+
 // Types
 export type {
   ParseContext,

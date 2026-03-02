@@ -4,13 +4,16 @@
   "description": "Pixel-perfect Figma design token parser for AI-assisted development",
   "type": "module",
   "bin": {
-    "figma-scaler": "./dist/cli.js"
+    "figma-scaler": "./dist/cli.js",
+    "mcp": "./dist/mcp/server.js"
   },
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "build": "tsc",
+    "build:mcp": "tsc && echo '#!/usr/bin/env node' | cat - dist/mcp/server.js > dist/mcp/server.tmp && mv dist/mcp/server.tmp dist/mcp/server.js",
+    "mcp:start": "node dist/mcp/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
@@ -24,7 +27,9 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "commander": "^14.0.3"
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "commander": "^14.0.3",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@figma/rest-api-spec": "^0.36.0",
