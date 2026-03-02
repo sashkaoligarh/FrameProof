@@ -1,0 +1,119 @@
+{
+  "name": "Auto Layout Test",
+  "lastModified": "2026-02-27T12:00:00Z",
+  "version": "200002",
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "name": "Auto Layout Page",
+        "type": "CANVAS",
+        "children": [
+          {
+            "id": "41:1",
+            "name": "Layout Samples",
+            "type": "FRAME",
+            "visible": true,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 1200, "height": 800 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": { "r": 0.96, "g": 0.96, "b": 0.96, "a": 1 },
+                "opacity": 1,
+                "visible": true
+              }
+            ],
+            "strokes": [],
+            "effects": [],
+            "children": [
+              {
+                "id": "41:2",
+                "name": "Card Vertical Stack",
+                "type": "FRAME",
+                "visible": true,
+                "absoluteBoundingBox": { "x": 24, "y": 24, "width": 360, "height": 480 },
+                "fills": [],
+                "strokes": [],
+                "effects": [],
+                "layoutMode": "VERTICAL",
+                "paddingTop": 24,
+                "paddingRight": 24,
+                "paddingBottom": 24,
+                "paddingLeft": 24,
+                "itemSpacing": 16,
+                "counterAxisSpacing": 0,
+                "primaryAxisAlignItems": "MIN",
+                "counterAxisAlignItems": "MIN",
+                "layoutWrap": "NO_WRAP",
+                "clipsContent": true,
+                "children": []
+              },
+              {
+                "id": "41:3",
+                "name": "Tag Row Wrap",
+                "type": "FRAME",
+                "visible": true,
+                "absoluteBoundingBox": { "x": 408, "y": 24, "width": 360, "height": 120 },
+                "fills": [],
+                "strokes": [],
+                "effects": [],
+                "layoutMode": "HORIZONTAL",
+                "paddingTop": 8,
+                "paddingRight": 16,
+                "paddingBottom": 8,
+                "paddingLeft": 16,
+                "itemSpacing": 8,
+                "counterAxisSpacing": 8,
+                "primaryAxisAlignItems": "SPACE_BETWEEN",
+                "counterAxisAlignItems": "CENTER",
+                "layoutWrap": "WRAP",
+                "clipsContent": false,
+                "children": []
+              },
+              {
+                "id": "41:4",
+                "name": "Static Container",
+                "type": "FRAME",
+                "visible": true,
+                "absoluteBoundingBox": { "x": 792, "y": 24, "width": 300, "height": 200 },
+                "fills": [],
+                "strokes": [],
+                "effects": [],
+                "clipsContent": false,
+                "children": []
+              },
+              {
+                "id": "41:5",
+                "name": "Flush Horizontal Row",
+                "type": "FRAME",
+                "visible": true,
+                "absoluteBoundingBox": { "x": 24, "y": 528, "width": 600, "height": 48 },
+                "fills": [],
+                "strokes": [],
+                "effects": [],
+                "layoutMode": "HORIZONTAL",
+                "paddingTop": 0,
+                "paddingRight": 0,
+                "paddingBottom": 0,
+                "paddingLeft": 0,
+                "itemSpacing": 0,
+                "counterAxisSpacing": 0,
+                "primaryAxisAlignItems": "MIN",
+                "counterAxisAlignItems": "MIN",
+                "layoutWrap": "NO_WRAP",
+                "clipsContent": true,
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "components": {},
+  "componentSets": {},
+  "styles": {}
+}

@@ -1,0 +1,36 @@
+{
+  "shadow-drop-1": {
+    "$type": "shadow",
+    "$value": {
+      "offset_x": "0px",
+      "offset_y": "2px",
+      "blur": "4px",
+      "spread": "0px",
+      "color": "#0000001a"
+    },
+    "$extensions": {
+      "figma-scaler": {
+        "node_id": "1:2",
+        "shadow_type": "DROP_SHADOW",
+        "css": "0px 2px 4px 0px rgba(0, 0, 0, 0.1)"
+      }
+    }
+  },
+  "shadow-inner-1": {
+    "$type": "shadow",
+    "$value": {
+      "offset_x": "0px",
+      "offset_y": "1px",
+      "blur": "2px",
+      "spread": "0px",
+      "color": "#0000000d"
+    },
+    "$extensions": {
+      "figma-scaler": {
+        "node_id": "1:6",
+        "shadow_type": "INNER_SHADOW",
+        "css": "inset 0px 1px 2px 0px rgba(0, 0, 0, 0.05)"
+      }
+    }
+  }
+}

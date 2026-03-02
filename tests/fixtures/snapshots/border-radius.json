@@ -1,0 +1,32 @@
+{
+  "radius-4": {
+    "$type": "dimension",
+    "$value": "4px",
+    "$extensions": {
+      "figma-scaler": {
+        "is_per_corner": false,
+        "usage_count": 2
+      }
+    }
+  },
+  "radius-8": {
+    "$type": "dimension",
+    "$value": "8px",
+    "$extensions": {
+      "figma-scaler": {
+        "is_per_corner": false,
+        "usage_count": 1
+      }
+    }
+  },
+  "radius-12": {
+    "$type": "dimension",
+    "$value": "12px",
+    "$extensions": {
+      "figma-scaler": {
+        "is_per_corner": false,
+        "usage_count": 1
+      }
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "figma-scaler",
+  "version": "0.1.0",
+  "description": "Pixel-perfect Figma design token parser for AI-assisted development",
+  "type": "module",
+  "bin": {
+    "figma-scaler": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "figma",
+    "design-tokens",
+    "css",
+    "parser"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^14.0.3"
+  },
+  "devDependencies": {
+    "@figma/rest-api-spec": "^0.36.0",
+    "@types/css-tree": "^2.3.11",
+    "@types/node": "^25.3.2",
+    "css-tree": "^3.1.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

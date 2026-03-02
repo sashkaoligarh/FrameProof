@@ -1,0 +1,153 @@
+{
+  "name": "Deep Nesting Test",
+  "lastModified": "2026-02-27T12:00:00Z",
+  "version": "300001",
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "name": "Page 1",
+        "type": "CANVAS",
+        "children": [
+          {
+            "id": "20:1",
+            "name": "DeepCard",
+            "type": "COMPONENT",
+            "visible": true,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 320, "height": 240 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": { "r": 1, "g": 1, "b": 1, "a": 1 },
+                "opacity": 1,
+                "visible": true
+              }
+            ],
+            "strokes": [],
+            "effects": [],
+            "layoutMode": "VERTICAL",
+            "paddingTop": 16,
+            "paddingRight": 16,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "itemSpacing": 8,
+            "primaryAxisAlignItems": "MIN",
+            "counterAxisAlignItems": "MIN",
+            "clipsContent": true,
+            "cornerRadius": 12,
+            "rectangleCornerRadii": [12, 12, 12, 12],
+            "children": [
+              {
+                "id": "20:2",
+                "name": "Outer Frame",
+                "type": "FRAME",
+                "visible": true,
+                "absoluteBoundingBox": { "x": 16, "y": 16, "width": 288, "height": 200 },
+                "fills": [],
+                "strokes": [],
+                "effects": [],
+                "children": [
+                  {
+                    "id": "20:3",
+                    "name": "Inner Frame",
+                    "type": "FRAME",
+                    "visible": true,
+                    "absoluteBoundingBox": { "x": 16, "y": 16, "width": 288, "height": 180 },
+                    "fills": [],
+                    "strokes": [],
+                    "effects": [],
+                    "children": [
+                      {
+                        "id": "20:4",
+                        "name": "Content Group",
+                        "type": "GROUP",
+                        "visible": true,
+                        "absoluteBoundingBox": { "x": 16, "y": 16, "width": 288, "height": 160 },
+                        "fills": [],
+                        "strokes": [],
+                        "effects": [],
+                        "children": [
+                          {
+                            "id": "20:5",
+                            "name": "Detail Frame",
+                            "type": "FRAME",
+                            "visible": true,
+                            "absoluteBoundingBox": { "x": 16, "y": 16, "width": 288, "height": 140 },
+                            "fills": [],
+                            "strokes": [],
+                            "effects": [],
+                            "children": [
+                              {
+                                "id": "20:6",
+                                "name": "Background",
+                                "type": "RECTANGLE",
+                                "visible": true,
+                                "absoluteBoundingBox": { "x": 16, "y": 16, "width": 288, "height": 100 },
+                                "fills": [
+                                  {
+                                    "type": "SOLID",
+                                    "color": { "r": 0.96, "g": 0.96, "b": 0.96, "a": 1 },
+                                    "opacity": 1,
+                                    "visible": true
+                                  }
+                                ],
+                                "strokes": [],
+                                "effects": [],
+                                "cornerRadius": 4
+                              },
+                              {
+                                "id": "20:7",
+                                "name": "Title",
+                                "type": "TEXT",
+                                "visible": true,
+                                "absoluteBoundingBox": { "x": 16, "y": 120, "width": 200, "height": 20 },
+                                "fills": [
+                                  {
+                                    "type": "SOLID",
+                                    "color": { "r": 0.067, "g": 0.094, "b": 0.153, "a": 1 },
+                                    "opacity": 1,
+                                    "visible": true
+                                  }
+                                ],
+                                "strokes": [],
+                                "effects": [],
+                                "characters": "Card Title",
+                                "style": {
+                                  "fontFamily": "Inter",
+                                  "fontSize": 14,
+                                  "fontWeight": 600,
+                                  "lineHeightPx": 20,
+                                  "lineHeightUnit": "PIXELS",
+                                  "letterSpacing": 0,
+                                  "textCase": "ORIGINAL",
+                                  "textDecoration": "NONE",
+                                  "textAlignHorizontal": "LEFT"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "components": {
+    "20:1": {
+      "key": "comp-deep-card",
+      "name": "DeepCard",
+      "description": "A card component with deeply nested structure"
+    }
+  },
+  "componentSets": {},
+  "styles": {}
+}

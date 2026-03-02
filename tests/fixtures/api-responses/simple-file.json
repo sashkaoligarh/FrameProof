@@ -1,0 +1,291 @@
+{
+  "name": "Test Design System",
+  "lastModified": "2026-02-27T12:00:00Z",
+  "version": "123456",
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "name": "Page 1",
+        "type": "CANVAS",
+        "children": [
+          {
+            "id": "1:1",
+            "name": "Colors Frame",
+            "type": "FRAME",
+            "visible": true,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 800, "height": 600 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": { "r": 1, "g": 1, "b": 1, "a": 1 },
+                "opacity": 1,
+                "visible": true
+              }
+            ],
+            "strokes": [],
+            "effects": [],
+            "cornerRadius": 8,
+            "layoutMode": "VERTICAL",
+            "paddingTop": 16,
+            "paddingRight": 16,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "itemSpacing": 12,
+            "primaryAxisAlignItems": "MIN",
+            "counterAxisAlignItems": "MIN",
+            "children": [
+              {
+                "id": "1:2",
+                "name": "Primary Button",
+                "type": "RECTANGLE",
+                "visible": true,
+                "absoluteBoundingBox": { "x": 16, "y": 16, "width": 200, "height": 48 },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": { "r": 0.145, "g": 0.388, "b": 0.922, "a": 1 },
+                    "opacity": 1,
+                    "visible": true
+                  }
+                ],
+                "strokes": [
+                  {
+                    "type": "SOLID",
+                    "color": { "r": 0.098, "g": 0.325, "b": 0.835, "a": 1 },
+                    "opacity": 1,
+                    "visible": true
+                  }
+                ],
+                "effects": [
+                  {
+                    "type": "DROP_SHADOW",
+                    "visible": true,
+                    "color": { "r": 0, "g": 0, "b": 0, "a": 0.1 },
+                    "offset": { "x": 0, "y": 2 },
+                    "radius": 4,
+                    "spread": 0
+                  }
+                ],
+                "cornerRadius": 4,
+                "rectangleCornerRadii": [4, 4, 4, 4]
+              },
+              {
+                "id": "1:3",
+                "name": "Heading Text",
+                "type": "TEXT",
+                "visible": true,
+                "absoluteBoundingBox": { "x": 16, "y": 80, "width": 400, "height": 48 },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": { "r": 0.067, "g": 0.094, "b": 0.153, "a": 1 },
+                    "opacity": 1,
+                    "visible": true
+                  }
+                ],
+                "strokes": [],
+                "effects": [],
+                "characters": "Welcome to Design System",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontSize": 32,
+                  "fontWeight": 700,
+                  "fontPostScriptName": "Inter-Bold",
+                  "lineHeightPx": 40,
+                  "lineHeightUnit": "PIXELS",
+                  "letterSpacing": -0.5,
+                  "textCase": "ORIGINAL",
+                  "textDecoration": "NONE",
+                  "textAlignHorizontal": "LEFT"
+                }
+              },
+              {
+                "id": "1:4",
+                "name": "Body Text",
+                "type": "TEXT",
+                "visible": true,
+                "absoluteBoundingBox": { "x": 16, "y": 140, "width": 400, "height": 24 },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": { "r": 0.267, "g": 0.314, "b": 0.404, "a": 1 },
+                    "opacity": 1,
+                    "visible": true
+                  }
+                ],
+                "strokes": [],
+                "effects": [],
+                "characters": "This is a body text paragraph for testing purposes.",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontSize": 16,
+                  "fontWeight": 400,
+                  "fontPostScriptName": "Inter-Regular",
+                  "lineHeightPx": 24,
+                  "lineHeightUnit": "PIXELS",
+                  "letterSpacing": 0,
+                  "textCase": "ORIGINAL",
+                  "textDecoration": "NONE",
+                  "textAlignHorizontal": "LEFT"
+                }
+              },
+              {
+                "id": "1:5",
+                "name": "Hidden Element",
+                "type": "RECTANGLE",
+                "visible": false,
+                "absoluteBoundingBox": { "x": 0, "y": 0, "width": 100, "height": 100 },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": { "r": 1, "g": 0, "b": 0, "a": 1 },
+                    "opacity": 1,
+                    "visible": true
+                  }
+                ],
+                "strokes": [],
+                "effects": []
+              },
+              {
+                "id": "1:6",
+                "name": "Gradient Card",
+                "type": "RECTANGLE",
+                "visible": true,
+                "absoluteBoundingBox": { "x": 16, "y": 180, "width": 300, "height": 200 },
+                "fills": [
+                  {
+                    "type": "GRADIENT_LINEAR",
+                    "visible": true,
+                    "opacity": 1,
+                    "gradientHandlePositions": [
+                      { "x": 0, "y": 0.5 },
+                      { "x": 1, "y": 0.5 }
+                    ],
+                    "gradientStops": [
+                      {
+                        "position": 0,
+                        "color": { "r": 0.145, "g": 0.388, "b": 0.922, "a": 1 }
+                      },
+                      {
+                        "position": 1,
+                        "color": { "r": 0.557, "g": 0.267, "b": 0.957, "a": 1 }
+                      }
+                    ]
+                  }
+                ],
+                "strokes": [],
+                "effects": [
+                  {
+                    "type": "INNER_SHADOW",
+                    "visible": true,
+                    "color": { "r": 0, "g": 0, "b": 0, "a": 0.05 },
+                    "offset": { "x": 0, "y": 1 },
+                    "radius": 2,
+                    "spread": 0
+                  }
+                ],
+                "cornerRadius": 12
+              },
+              {
+                "id": "1:7",
+                "name": "Auto Layout Row",
+                "type": "FRAME",
+                "visible": true,
+                "absoluteBoundingBox": { "x": 16, "y": 400, "width": 600, "height": 48 },
+                "fills": [],
+                "strokes": [],
+                "effects": [],
+                "layoutMode": "HORIZONTAL",
+                "paddingTop": 8,
+                "paddingRight": 16,
+                "paddingBottom": 8,
+                "paddingLeft": 16,
+                "itemSpacing": 8,
+                "counterAxisSpacing": 0,
+                "primaryAxisAlignItems": "SPACE_BETWEEN",
+                "counterAxisAlignItems": "CENTER",
+                "layoutWrap": "NO_WRAP",
+                "children": [
+                  {
+                    "id": "1:8",
+                    "name": "Duplicate Blue",
+                    "type": "RECTANGLE",
+                    "visible": true,
+                    "absoluteBoundingBox": { "x": 32, "y": 408, "width": 32, "height": 32 },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "color": { "r": 0.145, "g": 0.388, "b": 0.922, "a": 1 },
+                        "opacity": 1,
+                        "visible": true
+                      }
+                    ],
+                    "strokes": [],
+                    "effects": [],
+                    "cornerRadius": 4
+                  },
+                  {
+                    "id": "1:9",
+                    "name": "Image Fill",
+                    "type": "RECTANGLE",
+                    "visible": true,
+                    "absoluteBoundingBox": { "x": 72, "y": 408, "width": 100, "height": 32 },
+                    "fills": [
+                      {
+                        "type": "IMAGE",
+                        "visible": true,
+                        "opacity": 1,
+                        "imageRef": "abc123hash",
+                        "scaleMode": "FILL"
+                      }
+                    ],
+                    "strokes": [],
+                    "effects": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "0:2",
+        "name": "Page 2",
+        "type": "CANVAS",
+        "children": [
+          {
+            "id": "2:1",
+            "name": "Secondary Frame",
+            "type": "FRAME",
+            "visible": true,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 400, "height": 300 },
+            "fills": [],
+            "strokes": [],
+            "effects": [],
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "components": {
+    "1:10": {
+      "key": "comp-key-1",
+      "name": "Button",
+      "description": "Primary action button"
+    }
+  },
+  "componentSets": {},
+  "styles": {
+    "S:style1": {
+      "key": "style-key-1",
+      "name": "Brand/Primary",
+      "styleType": "FILL",
+      "description": "Primary brand color"
+    }
+  }
+}

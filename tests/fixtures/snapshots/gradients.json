@@ -1,0 +1,47 @@
+{
+  "gradient-linear-1": {
+    "$type": "gradient",
+    "$value": {
+      "type": "LINEAR",
+      "stops": [
+        {
+          "position": 0,
+          "color": "#2563eb"
+        },
+        {
+          "position": 1,
+          "color": "#8e44f4"
+        }
+      ]
+    },
+    "$extensions": {
+      "figma-scaler": {
+        "node_id": "1:6",
+        "handle_positions": [
+          {
+            "x": 0,
+            "y": 0.5
+          },
+          {
+            "x": 1,
+            "y": 0.5
+          }
+        ],
+        "stops_rgba": [
+          {
+            "r": 37,
+            "g": 99,
+            "b": 235,
+            "a": 1
+          },
+          {
+            "r": 142,
+            "g": 68,
+            "b": 244,
+            "a": 1
+          }
+        ]
+      }
+    }
+  }
+}

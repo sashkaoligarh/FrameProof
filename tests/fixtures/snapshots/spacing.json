@@ -1,0 +1,32 @@
+{
+  "spacing-8": {
+    "$type": "dimension",
+    "$value": "8px",
+    "$extensions": {
+      "figma-scaler": {
+        "source": "padding",
+        "usage_count": 3
+      }
+    }
+  },
+  "spacing-12": {
+    "$type": "dimension",
+    "$value": "12px",
+    "$extensions": {
+      "figma-scaler": {
+        "source": "item_spacing",
+        "usage_count": 1
+      }
+    }
+  },
+  "spacing-16": {
+    "$type": "dimension",
+    "$value": "16px",
+    "$extensions": {
+      "figma-scaler": {
+        "source": "padding",
+        "usage_count": 6
+      }
+    }
+  }
+}
