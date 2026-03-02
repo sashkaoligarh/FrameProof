@@ -23,5 +23,36 @@ Layout rules:
 - Match padding exactly: use var(--spacing-{value}) for each side
 - Match gap: use var(--spacing-{value}) for item_spacing
 - Match border-radius: use var(--radius-{value})
+  - If corner_radii is non-null, use per-corner values: border-radius: {tl}px {tr}px {br}px {bl}px
 - Match shadows: use var(--shadow-xxx)
-- Match typography: combine var(--font-family-xxx), var(--font-size-xxx), var(--font-weight-xxx)`;
+- Match typography: combine var(--font-family-xxx), var(--font-size-xxx), var(--font-weight-xxx)
+  - Prefer line_height_em and letter_spacing_em for responsive scaling
+
+Fills and backgrounds:
+- For solid fills: use css_variable or value_hex directly as background-color
+- For gradient fills (fill_type: "gradient"): use css_value directly as background property
+  - linear-gradient, radial-gradient, conic-gradient are all supported
+- For image fills (fill_type: "image"): call export_node_image for the asset, apply:
+  - background-size: use scale_mode_css (cover, contain, repeat, or 100% 100%)
+  - background-image: url(path-to-exported-image)
+- Multi-fill nodes: apply fills in Figma array order (first fill = bottommost layer)
+
+Visual properties:
+- opacity: apply directly as CSS opacity (omitted when 1.0)
+- rotation: apply as transform: rotate({value}deg). null means no rotation
+- blend_mode_css: apply as mix-blend-mode when non-null
+- overflow: "hidden" → overflow: hidden, "visible" → default
+
+Sizing and positioning:
+- layout.sizing_horizontal/sizing_vertical: FILL → width/height: 100%, HUG → auto, FIXED → explicit px
+- position: "absolute" → position: absolute with x/y as left/top
+- position: "relative" → element participates in auto-layout flow
+
+Strokes and borders:
+- alignment_css hints: "border" → use border, "box-shadow-inset" → use inset box-shadow, "outline" → use outline
+- dash_pattern: non-null → use border-style: dashed with stroke-dasharray equivalent
+
+Effects:
+- css_property: "backdrop-filter" → apply as backdrop-filter (background blur)
+- css_property: "filter" → apply as filter (layer blur)
+- css_property: "box-shadow" → apply as box-shadow`;

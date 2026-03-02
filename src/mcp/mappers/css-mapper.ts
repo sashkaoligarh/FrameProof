@@ -16,6 +16,13 @@ import type {
   LayoutInfo,
   ComponentRef,
 } from '../../types/mcp.js';
+import {
+  linearGradientCSS,
+  radialGradientCSS,
+  conicGradientCSS,
+  diamondGradientCSS,
+} from './gradient-css.js';
+import type { GradientHandlePositions, FigmaGradientStop } from './gradient-css.js';
 
 const DEFAULT_DEPTH = 5;
 
@@ -46,7 +53,38 @@ function buildNodeDetail(
     | { x: number; y: number; width: number; height: number }
     | undefined;
 
-  return {
+  // --- Opacity (T012) ---
+  const rawOpacity = r.opacity as number | undefined;
+  const opacityVal = rawOpacity !== undefined ? Math.min(1, Math.max(0, rawOpacity)) : undefined;
+
+  // --- Per-corner radii (T015) ---
+  const rectCornerRadii = r.rectangleCornerRadii as [number, number, number, number] | undefined;
+  let cornerRadii: [number, number, number, number] | null = null;
+  if (rectCornerRadii && Array.isArray(rectCornerRadii)) {
+    const allZero = rectCornerRadii.every((v) => v === 0);
+    const allSame = rectCornerRadii.every((v) => v === rectCornerRadii[0]);
+    if (!allZero && !allSame) {
+      cornerRadii = rectCornerRadii;
+    }
+  }
+
+  // --- Rotation (T016) ---
+  const rawRotation = r.rotation as number | undefined;
+  const rotation = rawRotation && rawRotation !== 0 ? rawRotation : null;
+
+  // --- Blend mode (T017) ---
+  const rawBlendMode = r.blendMode as string | undefined;
+  const { blend_mode, blend_mode_css } = mapBlendMode(rawBlendMode);
+
+  // --- Overflow (T018) ---
+  const clipsContent = r.clipsContent as boolean | undefined;
+  const overflow: 'hidden' | 'visible' = clipsContent === true ? 'hidden' : 'visible';
+
+  // --- Absolute positioning (T020) ---
+  const layoutPositioning = r.layoutPositioning as string | undefined;
+  const position: 'absolute' | 'relative' = layoutPositioning === 'ABSOLUTE' ? 'absolute' : 'relative';
+
+  const detail: NodeDetail = {
     node_id: (r.id as string) ?? '',
     name: (r.name as string) ?? '',
     node_type: raw.type,
@@ -59,6 +97,12 @@ function buildNodeDetail(
     strokes: mapStrokes(r, tokens),
     effects: mapEffects(r, tokens),
     corner_radius: mapCornerRadius(r, tokens),
+    corner_radii: cornerRadii,
+    rotation,
+    blend_mode,
+    blend_mode_css,
+    overflow,
+    position,
     layout: mapLayout(r, tokens),
     typography: mapTypography(r, tokens),
     text_content: raw.type === 'TEXT' ? ((r.characters as string) ?? null) : null,
@@ -66,6 +110,13 @@ function buildNodeDetail(
     children: mapChildren(r, tokens, currentDepth, maxDepth),
     component_info: mapComponentInfo(r),
   };
+
+  // Omit opacity when 1.0 or absent (T012)
+  if (opacityVal !== undefined && opacityVal < 1) {
+    detail.opacity = opacityVal;
+  }
+
+  return detail;
 }
 
 // ─── Fills ──────────────────────────────────────────────
@@ -75,19 +126,111 @@ function mapFills(r: Record<string, unknown>, tokens: AllTokens): CSSMappedFill[
   if (!fills || !Array.isArray(fills)) return [];
 
   return fills
-    .filter((f) => f.type === 'SOLID' && f.visible !== false)
-    .map((f) => {
-      const color = f.color as { r: number; g: number; b: number; a: number };
-      const hex = rgbaToHex(color.r, color.g, color.b);
-      const matched = matchColor(hex, tokens.colors);
+    .filter((f) => f.visible !== false)
+    .map((f): CSSMappedFill | null => {
+      const type = f.type as string;
 
-      return {
-        value_hex: hex,
-        opacity: color.a ?? 1,
-        css_variable: matched ? `var(--color-${matched.name})` : null,
-        css_property: 'background-color',
-      };
-    });
+      // --- SOLID fills ---
+      if (type === 'SOLID') {
+        const color = f.color as { r: number; g: number; b: number; a: number };
+        const hex = rgbaToHex(color.r, color.g, color.b);
+        const matched = matchColor(hex, tokens.colors);
+
+        return {
+          fill_type: 'solid',
+          value_hex: hex,
+          opacity: color.a ?? 1,
+          css_variable: matched ? `var(--color-${matched.name})` : null,
+          css_property: 'background-color',
+          css_value: null,
+          gradient_type: null,
+          image_ref: null,
+          scale_mode: null,
+          scale_mode_css: null,
+        };
+      }
+
+      // --- GRADIENT fills (T010) ---
+      if (type.startsWith('GRADIENT_')) {
+        const handles = parseGradientHandles(f);
+        const stops = parseGradientStops(f);
+        const gradientSubtype = type.replace('GRADIENT_', '') as 'LINEAR' | 'RADIAL' | 'ANGULAR' | 'DIAMOND';
+
+        let cssValue: string;
+        switch (gradientSubtype) {
+          case 'LINEAR':
+            cssValue = linearGradientCSS(handles, stops);
+            break;
+          case 'RADIAL':
+            cssValue = radialGradientCSS(handles, stops);
+            break;
+          case 'ANGULAR':
+            cssValue = conicGradientCSS(handles, stops);
+            break;
+          case 'DIAMOND':
+            cssValue = diamondGradientCSS(handles, stops);
+            break;
+        }
+
+        return {
+          fill_type: 'gradient',
+          value_hex: null,
+          opacity: 1,
+          css_variable: null,
+          css_property: 'background',
+          css_value: cssValue,
+          gradient_type: gradientSubtype,
+          image_ref: null,
+          scale_mode: null,
+          scale_mode_css: null,
+        };
+      }
+
+      // --- IMAGE fills (T011) ---
+      if (type === 'IMAGE') {
+        const imageRef = (f.imageRef as string) || null;
+        const scaleMode = (f.scaleMode as string) ?? 'FILL';
+
+        const scaleModeMap: Record<string, string> = {
+          FILL: 'cover',
+          FIT: 'contain',
+          TILE: 'repeat',
+          STRETCH: '100% 100%',
+        };
+
+        return {
+          fill_type: 'image',
+          value_hex: null,
+          opacity: 1,
+          css_variable: null,
+          css_property: 'background-image',
+          css_value: imageRef ? `url(${imageRef})` : null,
+          gradient_type: null,
+          image_ref: imageRef,
+          scale_mode: scaleMode,
+          scale_mode_css: scaleModeMap[scaleMode] ?? 'cover',
+        };
+      }
+
+      return null;
+    })
+    .filter((f): f is CSSMappedFill => f !== null);
+}
+
+/** Parse Figma gradientHandlePositions into our typed struct. */
+function parseGradientHandles(f: Record<string, unknown>): GradientHandlePositions {
+  const positions = f.gradientHandlePositions as Array<{ x: number; y: number }> | undefined;
+  return {
+    p0: positions?.[0] ?? { x: 0, y: 0 },
+    p1: positions?.[1] ?? { x: 1, y: 0 },
+    p2: positions?.[2] ?? { x: 0, y: 1 },
+  };
+}
+
+/** Parse Figma gradientStops into our typed struct. */
+function parseGradientStops(f: Record<string, unknown>): FigmaGradientStop[] {
+  const stops = f.gradientStops as Array<{ position: number; color: { r: number; g: number; b: number; a: number } }> | undefined;
+  return stops ?? [];
 }
 
 // ─── Strokes ────────────────────────────────────────────
@@ -97,6 +240,8 @@ function mapStrokes(r: Record<string, unknown>, tokens: AllTokens): CSSMappedStr
   if (!strokes || !Array.isArray(strokes)) return [];
 
   const strokeWeight = (r.strokeWeight as number) ?? 1;
+  const strokeAlign = (r.strokeAlign as string) ?? 'CENTER';
+  const dashPattern = r.strokeDashPattern as number[] | undefined;
 
   return strokes
     .filter((s) => s.type === 'SOLID' && s.visible !== false)
@@ -105,11 +250,19 @@ function mapStrokes(r: Record<string, unknown>, tokens: AllTokens): CSSMappedStr
       const hex = rgbaToHex(color.r, color.g, color.b);
       const matched = matchColor(hex, tokens.colors);
 
+      const alignment = strokeAlign as 'INSIDE' | 'OUTSIDE' | 'CENTER';
+      let alignmentCss = 'border';
+      if (alignment === 'INSIDE') alignmentCss = 'box-shadow-inset';
+      else if (alignment === 'OUTSIDE') alignmentCss = 'outline';
+
       return {
         value_hex: hex,
         weight: strokeWeight,
         css_variable: matched ? `var(--color-${matched.name})` : null,
         css_property: 'border-color',
+        alignment,
+        alignment_css: alignmentCss,
+        dash_pattern: dashPattern && dashPattern.length > 0 ? dashPattern : null,
       };
     });
 }
@@ -128,7 +281,9 @@ function mapEffects(r: Record<string, unknown>, tokens: AllTokens): CSSMappedEff
       const matched = matchShadow(e, tokens.shadows);
 
       let cssProperty: string;
-      if (effectType === 'LAYER_BLUR' || effectType === 'BACKGROUND_BLUR') {
+      if (effectType === 'BACKGROUND_BLUR') {
+        cssProperty = 'backdrop-filter';
+      } else if (effectType === 'LAYER_BLUR') {
         cssProperty = 'filter';
       } else if (effectType === 'INNER_SHADOW') {
         cssProperty = 'box-shadow';
@@ -200,6 +355,9 @@ function mapLayout(r: Record<string, unknown>, tokens: AllTokens): LayoutInfo | 
   const itemSpacing = (r.itemSpacing as number) ?? 0;
   const counterAxisSpacing = r.counterAxisSpacing as number | undefined;
 
+  const sizingH = r.layoutSizingHorizontal as string | undefined;
+  const sizingV = r.layoutSizingVertical as string | undefined;
+
   return {
     mode: layoutMode,
     padding: {
@@ -220,6 +378,8 @@ function mapLayout(r: Record<string, unknown>, tokens: AllTokens): LayoutInfo | 
     primary_axis_align: (r.primaryAxisAlignItems as string) ?? 'MIN',
     counter_axis_align: (r.counterAxisAlignItems as string) ?? 'MIN',
     layout_wrap: (r.layoutWrap as string) ?? 'NO_WRAP',
+    sizing_horizontal: (sizingH as LayoutInfo['sizing_horizontal']) ?? null,
+    sizing_vertical: (sizingV as LayoutInfo['sizing_vertical']) ?? null,
   };
 }
 
@@ -287,6 +447,14 @@ function mapTypography(
     }
   }
 
+  // Compute em-based values
+  const lineHeightEm = lineHeightPx && fontSize > 0
+    ? `${parseFloat((lineHeightPx / fontSize).toFixed(4))}em`
+    : 'normal';
+  const letterSpacingEm = fontSize > 0
+    ? `${parseFloat((letterSpacing / fontSize).toFixed(4))}em`
+    : '0em';
+
   return {
     font_family: fontFamily,
     font_family_css: hasFamily ? `var(--font-family-${familySlug})` : null,
@@ -295,7 +463,9 @@ function mapTypography(
     font_weight: fontWeight,
     font_weight_css: hasWeight ? `var(--font-weight-${fontWeight})` : null,
     line_height: lineHeightPx ? `${lineHeightPx}px` : 'normal',
+    line_height_em: lineHeightEm,
     letter_spacing: letterSpacing,
+    letter_spacing_em: letterSpacingEm,
     text_align: textAlign,
     text_case: textCase,
     text_decoration: textDecoration,
@@ -430,6 +600,40 @@ function mapComponentInfo(r: Record<string, unknown>): ComponentRef | null {
   }
 
   return null;
+}
+
+// ─── Blend Mode (T017) ──────────────────────────────────
+
+const BLEND_MODE_MAP: Record<string, string> = {
+  MULTIPLY: 'multiply',
+  SCREEN: 'screen',
+  OVERLAY: 'overlay',
+  DARKEN: 'darken',
+  LIGHTEN: 'lighten',
+  COLOR_DODGE: 'color-dodge',
+  COLOR_BURN: 'color-burn',
+  HARD_LIGHT: 'hard-light',
+  SOFT_LIGHT: 'soft-light',
+  DIFFERENCE: 'difference',
+  EXCLUSION: 'exclusion',
+  HUE: 'hue',
+  SATURATION: 'saturation',
+  COLOR: 'color',
+  LUMINOSITY: 'luminosity',
+  LINEAR_BURN: 'color-burn',
+  LINEAR_DODGE: 'color-dodge',
+};
+
+function mapBlendMode(rawBlendMode: string | undefined): {
+  blend_mode: string | null;
+  blend_mode_css: string | null;
+} {
+  if (!rawBlendMode || rawBlendMode === 'NORMAL' || rawBlendMode === 'PASS_THROUGH') {
+    return { blend_mode: null, blend_mode_css: null };
+  }
+
+  const cssValue = BLEND_MODE_MAP[rawBlendMode] ?? rawBlendMode.toLowerCase().replace(/_/g, '-');
+  return { blend_mode: rawBlendMode, blend_mode_css: cssValue };
 }
 
 // ─── Color Matching ─────────────────────────────────────

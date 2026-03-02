@@ -588,3 +588,563 @@ describe('mapNodeToDetail — no tokens', () => {
     expect(detail.corner_radius!.css_variable).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests — US1: Gradient fills (T008)
+// ---------------------------------------------------------------------------
+
+describe('mapNodeToDetail — gradient fills', () => {
+  it('maps LINEAR gradient fill with css_value and fill_type', () => {
+    const node = makeNode({
+      fills: [
+        {
+          type: 'GRADIENT_LINEAR',
+          visible: true,
+          gradientHandlePositions: [
+            { x: 0, y: 0.5 },
+            { x: 1, y: 0.5 },
+            { x: 0, y: 0 },
+          ],
+          gradientStops: [
+            { position: 0, color: { r: 1, g: 0, b: 0, a: 1 } },
+            { position: 1, color: { r: 0, g: 0, b: 1, a: 1 } },
+          ],
+        },
+      ],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+
+    expect(detail.fills).toHaveLength(1);
+    expect(detail.fills[0].fill_type).toBe('gradient');
+    expect(detail.fills[0].gradient_type).toBe('LINEAR');
+    expect(detail.fills[0].css_value).toMatch(/^linear-gradient\(/);
+    expect(detail.fills[0].value_hex).toBeNull();
+  });
+
+  it('maps RADIAL gradient fill with css_value', () => {
+    const node = makeNode({
+      fills: [
+        {
+          type: 'GRADIENT_RADIAL',
+          visible: true,
+          gradientHandlePositions: [
+            { x: 0.5, y: 0.5 },
+            { x: 1, y: 0.5 },
+            { x: 0.5, y: 0 },
+          ],
+          gradientStops: [
+            { position: 0, color: { r: 1, g: 0, b: 0, a: 1 } },
+            { position: 1, color: { r: 0, g: 0, b: 0, a: 0 } },
+          ],
+        },
+      ],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+
+    expect(detail.fills).toHaveLength(1);
+    expect(detail.fills[0].fill_type).toBe('gradient');
+    expect(detail.fills[0].gradient_type).toBe('RADIAL');
+    expect(detail.fills[0].css_value).toMatch(/^radial-gradient\(/);
+  });
+
+  it('maps ANGULAR gradient fill to conic-gradient', () => {
+    const node = makeNode({
+      fills: [
+        {
+          type: 'GRADIENT_ANGULAR',
+          visible: true,
+          gradientHandlePositions: [
+            { x: 0.5, y: 0.5 },
+            { x: 1, y: 0.5 },
+            { x: 0.5, y: 0 },
+          ],
+          gradientStops: [
+            { position: 0, color: { r: 1, g: 0, b: 0, a: 1 } },
+            { position: 1, color: { r: 0, g: 1, b: 0, a: 1 } },
+          ],
+        },
+      ],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+
+    expect(detail.fills[0].fill_type).toBe('gradient');
+    expect(detail.fills[0].gradient_type).toBe('ANGULAR');
+    expect(detail.fills[0].css_value).toMatch(/^conic-gradient\(/);
+  });
+
+  it('maps DIAMOND gradient fill as radial-gradient approximation', () => {
+    const node = makeNode({
+      fills: [
+        {
+          type: 'GRADIENT_DIAMOND',
+          visible: true,
+          gradientHandlePositions: [
+            { x: 0.5, y: 0.5 },
+            { x: 1, y: 0.5 },
+            { x: 0.5, y: 0 },
+          ],
+          gradientStops: [
+            { position: 0, color: { r: 1, g: 1, b: 0, a: 1 } },
+            { position: 1, color: { r: 0, g: 0, b: 1, a: 1 } },
+          ],
+        },
+      ],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+
+    expect(detail.fills[0].fill_type).toBe('gradient');
+    expect(detail.fills[0].gradient_type).toBe('DIAMOND');
+    expect(detail.fills[0].css_value).toMatch(/^radial-gradient\(/);
+  });
+
+  it('solid fills have fill_type: solid', () => {
+    const node = makeNode({
+      fills: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0, a: 1 }, visible: true }],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.fills[0].fill_type).toBe('solid');
+  });
+
+  it('preserves multi-fill stacking order (gradient + solid)', () => {
+    const node = makeNode({
+      fills: [
+        {
+          type: 'GRADIENT_LINEAR',
+          visible: true,
+          gradientHandlePositions: [
+            { x: 0, y: 0 },
+            { x: 1, y: 1 },
+            { x: 0, y: 1 },
+          ],
+          gradientStops: [
+            { position: 0, color: { r: 1, g: 0, b: 0, a: 1 } },
+            { position: 1, color: { r: 0, g: 0, b: 1, a: 1 } },
+          ],
+        },
+        { type: 'SOLID', color: { r: 1, g: 1, b: 1, a: 1 }, visible: true },
+      ],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.fills).toHaveLength(2);
+    expect(detail.fills[0].fill_type).toBe('gradient');
+    expect(detail.fills[1].fill_type).toBe('solid');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — US1: Image fills (T008)
+// ---------------------------------------------------------------------------
+
+describe('mapNodeToDetail — image fills', () => {
+  it('maps IMAGE fill with FILL scale mode → cover', () => {
+    const node = makeNode({
+      fills: [{ type: 'IMAGE', visible: true, imageRef: 'abc123', scaleMode: 'FILL' }],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+
+    expect(detail.fills).toHaveLength(1);
+    expect(detail.fills[0].fill_type).toBe('image');
+    expect(detail.fills[0].image_ref).toBe('abc123');
+    expect(detail.fills[0].scale_mode).toBe('FILL');
+    expect(detail.fills[0].scale_mode_css).toBe('cover');
+  });
+
+  it('maps IMAGE fill with FIT scale mode → contain', () => {
+    const node = makeNode({
+      fills: [{ type: 'IMAGE', visible: true, imageRef: 'img456', scaleMode: 'FIT' }],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.fills[0].scale_mode_css).toBe('contain');
+  });
+
+  it('maps IMAGE fill with TILE scale mode → repeat', () => {
+    const node = makeNode({
+      fills: [{ type: 'IMAGE', visible: true, imageRef: 'tile789', scaleMode: 'TILE' }],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.fills[0].scale_mode_css).toBe('repeat');
+  });
+
+  it('maps IMAGE fill with STRETCH scale mode → 100% 100%', () => {
+    const node = makeNode({
+      fills: [{ type: 'IMAGE', visible: true, imageRef: 'str000', scaleMode: 'STRETCH' }],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.fills[0].scale_mode_css).toBe('100% 100%');
+  });
+
+  it('handles missing imageRef with null and keeps fill', () => {
+    const node = makeNode({
+      fills: [{ type: 'IMAGE', visible: true, scaleMode: 'FILL' }],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.fills).toHaveLength(1);
+    expect(detail.fills[0].fill_type).toBe('image');
+    expect(detail.fills[0].image_ref).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — US1: Element opacity (T008)
+// ---------------------------------------------------------------------------
+
+describe('mapNodeToDetail — element opacity', () => {
+  it('includes opacity field when not 1.0', () => {
+    const node = makeNode({ opacity: 0.5 });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.opacity).toBe(0.5);
+  });
+
+  it('omits opacity (undefined) when 1.0', () => {
+    const node = makeNode({ opacity: 1.0 });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.opacity).toBeUndefined();
+  });
+
+  it('omits opacity when not present on node', () => {
+    const node = makeNode({});
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.opacity).toBeUndefined();
+  });
+
+  it('clamps opacity to [0, 1] — clamped to 1.0 is omitted', () => {
+    const node = makeNode({ opacity: 1.5 });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    // 1.5 clamps to 1.0, which is omitted per spec
+    expect(detail.opacity).toBeUndefined();
+  });
+
+  it('clamps opacity below 0 to 0', () => {
+    const node = makeNode({ opacity: -0.5 });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.opacity).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — US1: Backdrop blur vs layer blur (T008)
+// ---------------------------------------------------------------------------
+
+describe('mapNodeToDetail — backdrop blur', () => {
+  it('maps BACKGROUND_BLUR to css_property: backdrop-filter', () => {
+    const node = makeNode({
+      effects: [{ type: 'BACKGROUND_BLUR', visible: true, radius: 8 }],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.effects).toHaveLength(1);
+    expect(detail.effects[0].css_property).toBe('backdrop-filter');
+  });
+
+  it('maps LAYER_BLUR to css_property: filter', () => {
+    const node = makeNode({
+      effects: [{ type: 'LAYER_BLUR', visible: true, radius: 4 }],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.effects[0].css_property).toBe('filter');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — US2: Per-corner radii (T014)
+// ---------------------------------------------------------------------------
+
+describe('mapNodeToDetail — per-corner radii', () => {
+  it('maps non-uniform rectangleCornerRadii to corner_radii array', () => {
+    const node = makeNode({ rectangleCornerRadii: [16, 16, 0, 0] });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.corner_radii).toEqual([16, 16, 0, 0]);
+  });
+
+  it('returns null corner_radii when all zeros', () => {
+    const node = makeNode({ rectangleCornerRadii: [0, 0, 0, 0] });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.corner_radii).toBeNull();
+  });
+
+  it('returns null corner_radii when all values equal cornerRadius', () => {
+    const node = makeNode({ cornerRadius: 8, rectangleCornerRadii: [8, 8, 8, 8] });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.corner_radii).toBeNull();
+  });
+
+  it('returns null corner_radii when not present', () => {
+    const node = makeNode({});
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.corner_radii).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — US2: Rotation (T014)
+// ---------------------------------------------------------------------------
+
+describe('mapNodeToDetail — rotation', () => {
+  it('maps rotation value in degrees', () => {
+    const node = makeNode({ rotation: 45 });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.rotation).toBe(45);
+  });
+
+  it('returns null rotation when 0', () => {
+    const node = makeNode({ rotation: 0 });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.rotation).toBeNull();
+  });
+
+  it('returns null rotation when absent', () => {
+    const node = makeNode({});
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.rotation).toBeNull();
+  });
+
+  it('reports rotation inside auto-layout frame', () => {
+    const node = makeNode({
+      rotation: 30,
+      layoutMode: 'HORIZONTAL',
+    });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.rotation).toBe(30);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — US2: Blend mode (T014)
+// ---------------------------------------------------------------------------
+
+describe('mapNodeToDetail — blend mode', () => {
+  it('maps MULTIPLY to multiply', () => {
+    const node = makeNode({ blendMode: 'MULTIPLY' });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.blend_mode).toBe('MULTIPLY');
+    expect(detail.blend_mode_css).toBe('multiply');
+  });
+
+  it('returns null for NORMAL', () => {
+    const node = makeNode({ blendMode: 'NORMAL' });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.blend_mode).toBeNull();
+    expect(detail.blend_mode_css).toBeNull();
+  });
+
+  it('returns null for PASS_THROUGH', () => {
+    const node = makeNode({ blendMode: 'PASS_THROUGH' });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.blend_mode).toBeNull();
+  });
+
+  it('maps LINEAR_BURN to color-burn approximation', () => {
+    const node = makeNode({ blendMode: 'LINEAR_BURN' });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.blend_mode_css).toBe('color-burn');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — US2: Overflow (T014)
+// ---------------------------------------------------------------------------
+
+describe('mapNodeToDetail — overflow', () => {
+  it('maps clipsContent: true to overflow: hidden', () => {
+    const node = makeNode({ clipsContent: true });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.overflow).toBe('hidden');
+  });
+
+  it('defaults to overflow: visible when clipsContent absent', () => {
+    const node = makeNode({});
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.overflow).toBe('visible');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — US2: Sizing modes (T014)
+// ---------------------------------------------------------------------------
+
+describe('mapNodeToDetail — sizing modes', () => {
+  it('maps FILL sizing horizontal', () => {
+    const node = makeNode({
+      layoutMode: 'HORIZONTAL',
+      layoutSizingHorizontal: 'FILL',
+      layoutSizingVertical: 'HUG',
+      paddingTop: 0, paddingRight: 0, paddingBottom: 0, paddingLeft: 0,
+      itemSpacing: 0,
+    });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.layout!.sizing_horizontal).toBe('FILL');
+    expect(detail.layout!.sizing_vertical).toBe('HUG');
+  });
+
+  it('returns null sizing for non-auto-layout nodes', () => {
+    const node = makeNode({});
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.layout).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — US2: Absolute positioning (T014)
+// ---------------------------------------------------------------------------
+
+describe('mapNodeToDetail — absolute positioning', () => {
+  it('detects absolute positioning via layoutPositioning', () => {
+    const node = makeNode({ layoutPositioning: 'ABSOLUTE' });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.position).toBe('absolute');
+  });
+
+  it('defaults to relative positioning', () => {
+    const node = makeNode({});
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.position).toBe('relative');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — US3: Stroke alignment and dash patterns (T021)
+// ---------------------------------------------------------------------------
+
+describe('mapNodeToDetail — stroke alignment', () => {
+  it('maps INSIDE alignment with box-shadow-inset hint', () => {
+    const node = makeNode({
+      strokes: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0, a: 1 }, visible: true }],
+      strokeWeight: 1,
+      strokeAlign: 'INSIDE',
+    });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.strokes[0].alignment).toBe('INSIDE');
+    expect(detail.strokes[0].alignment_css).toBe('box-shadow-inset');
+  });
+
+  it('maps CENTER alignment with border hint', () => {
+    const node = makeNode({
+      strokes: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0, a: 1 }, visible: true }],
+      strokeWeight: 1,
+      strokeAlign: 'CENTER',
+    });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.strokes[0].alignment).toBe('CENTER');
+    expect(detail.strokes[0].alignment_css).toBe('border');
+  });
+
+  it('maps OUTSIDE alignment with outline hint', () => {
+    const node = makeNode({
+      strokes: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0, a: 1 }, visible: true }],
+      strokeWeight: 1,
+      strokeAlign: 'OUTSIDE',
+    });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.strokes[0].alignment).toBe('OUTSIDE');
+    expect(detail.strokes[0].alignment_css).toBe('outline');
+  });
+});
+
+describe('mapNodeToDetail — stroke dash pattern', () => {
+  it('maps strokeDashPattern to dash_pattern array', () => {
+    const node = makeNode({
+      strokes: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0, a: 1 }, visible: true }],
+      strokeWeight: 1,
+      strokeDashPattern: [8, 4],
+    });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.strokes[0].dash_pattern).toEqual([8, 4]);
+  });
+
+  it('returns null dash_pattern for solid strokes', () => {
+    const node = makeNode({
+      strokes: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0, a: 1 }, visible: true }],
+      strokeWeight: 1,
+    });
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.strokes[0].dash_pattern).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — US4: Typography em units (T024)
+// ---------------------------------------------------------------------------
+
+describe('mapNodeToDetail — typography em units', () => {
+  it('computes line_height_em from lineHeightPx / fontSize', () => {
+    const node = makeNode({
+      type: 'TEXT',
+      characters: 'Test',
+      style: {
+        fontFamily: 'Inter', fontSize: 16, fontWeight: 400,
+        lineHeightPx: 24, letterSpacing: 0.8,
+        textAlignHorizontal: 'LEFT', textCase: 'ORIGINAL', textDecoration: 'NONE',
+      },
+      fills: [],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.typography!.line_height_em).toBe('1.5em');
+    expect(detail.typography!.letter_spacing_em).toBe('0.05em');
+  });
+
+  it('returns normal for Auto line-height', () => {
+    const node = makeNode({
+      type: 'TEXT',
+      characters: 'Test',
+      style: {
+        fontFamily: 'Inter', fontSize: 16, fontWeight: 400,
+        letterSpacing: 0,
+        textAlignHorizontal: 'LEFT', textCase: 'ORIGINAL', textDecoration: 'NONE',
+      },
+      fills: [],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.typography!.line_height).toBe('normal');
+    expect(detail.typography!.line_height_em).toBe('normal');
+  });
+
+  it('handles zero fontSize gracefully', () => {
+    const node = makeNode({
+      type: 'TEXT',
+      characters: 'Test',
+      style: {
+        fontFamily: 'Inter', fontSize: 0, fontWeight: 400,
+        lineHeightPx: 24, letterSpacing: 0.5,
+        textAlignHorizontal: 'LEFT', textCase: 'ORIGINAL', textDecoration: 'NONE',
+      },
+      fills: [],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.typography!.line_height_em).toBe('normal');
+    expect(detail.typography!.letter_spacing_em).toBe('0em');
+  });
+
+  it('preserves existing px fields', () => {
+    const node = makeNode({
+      type: 'TEXT',
+      characters: 'Test',
+      style: {
+        fontFamily: 'Inter', fontSize: 20, fontWeight: 400,
+        lineHeightPx: 30, letterSpacing: 1.0,
+        textAlignHorizontal: 'LEFT', textCase: 'ORIGINAL', textDecoration: 'NONE',
+      },
+      fills: [],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.typography!.line_height).toBe('30px');
+    expect(detail.typography!.letter_spacing).toBe(1.0);
+    expect(detail.typography!.line_height_em).toBe('1.5em');
+    expect(detail.typography!.letter_spacing_em).toBe('0.05em');
+  });
+});

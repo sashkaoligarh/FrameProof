@@ -24,10 +24,18 @@ export const READ_DESIGN_STRATEGY_MESSAGE = `When reading a Figma design for imp
    b. Read the response top-down: root frame → children → nested children
    c. Pay attention to layout.mode (HORIZONTAL/VERTICAL) for flex direction
    d. Use css_variable fields directly — they map to the design system
+   e. Check fill_type for each fill: "solid", "gradient", or "image"
+   f. Check overflow, opacity, rotation, blend_mode_css for visual fidelity
+   g. For large trees, use deduplicate_styles: true to reduce response size
 
 4. For images/icons:
    - Call export_node_image with format=svg for icons
    - Call export_node_image with format=png and scale=2 for raster images
 
 5. When uncertain about a value:
-   - Call search_token with the raw value to find the matching CSS variable`;
+   - Call search_token with the raw value to find the matching CSS variable
+
+6. For visual verification after implementing:
+   - Call get_screenshot for the frame to get a reference screenshot
+   - Compare your implementation against the exported screenshot
+   - The summary field provides structural hints (child count, layout mode, dimensions)`;

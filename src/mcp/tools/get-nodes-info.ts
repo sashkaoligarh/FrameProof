@@ -5,9 +5,11 @@
 
 import { z } from 'zod';
 import type { TokenCache, FetchCallback } from '../cache.js';
-import type { NodeDetail } from '../../types/mcp.js';
+import type { NodeDetail, NodeDetailDeduped } from '../../types/mcp.js';
 import { mapNodeToDetail } from '../mappers/css-mapper.js';
 import { trimNodeDetailArray, DEFAULT_MAX_CHARS } from '../utils/response-limiter.js';
+import { deduplicateStylesArray } from '../utils/style-dedup.js';
+import { collapseSvgGroups } from '../utils/svg-collapse.js';
 
 export const getNodesInfoSchema = {
   file_id: z.string().describe('Figma file ID or URL'),
@@ -18,6 +20,11 @@ export const getNodesInfoSchema = {
     .optional()
     .default(DEFAULT_MAX_CHARS)
     .describe('Max response size in chars; auto-trims if exceeded'),
+  deduplicate_styles: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Replace repeated fills/strokes/effects with hash refs to reduce size'),
 };
 
 export interface GetNodesInfoParams {
@@ -25,10 +32,11 @@ export interface GetNodesInfoParams {
   node_ids: string[];
   depth?: number;
   max_response_chars?: number;
+  deduplicate_styles?: boolean;
 }
 
 export interface GetNodesInfoResult {
-  nodes: NodeDetail[];
+  nodes: (NodeDetail | NodeDetailDeduped)[];
   total_requested: number;
   total_returned: number;
   _truncated?: boolean;
@@ -60,11 +68,26 @@ export async function handleGetNodesInfo(
           `Use get_document_structure to discover available node IDs.`,
       );
     }
-    return mapNodeToDetail(node.raw, entry.tokens, depth);
+    // SVG collapse first (per T030 pipeline order)
+    return collapseSvgGroups(mapNodeToDetail(node.raw, entry.tokens, depth));
   });
 
   const maxChars = params.max_response_chars ?? DEFAULT_MAX_CHARS;
   const trimResult = trimNodeDetailArray(details, maxChars);
+
+  if (params.deduplicate_styles) {
+    const dedupedNodes = deduplicateStylesArray(trimResult.data);
+    const result: GetNodesInfoResult = {
+      nodes: dedupedNodes,
+      total_requested: params.node_ids.length,
+      total_returned: dedupedNodes.length,
+    };
+    if (trimResult.truncated) {
+      result._truncated = true;
+      result._message = trimResult.message!;
+    }
+    return result;
+  }
 
   const result: GetNodesInfoResult = {
     nodes: trimResult.data,

@@ -22,6 +22,7 @@ import { exportNodeImageSchema, handleExportNodeImage } from './tools/export-nod
 import { getDocumentStructureSchema, handleGetDocumentStructure } from './tools/get-document-structure.js';
 import { getDesignContextSchema, handleGetDesignContext } from './tools/get-design-context.js';
 import { searchTokenSchema, handleSearchToken } from './tools/search-token.js';
+import { getScreenshotSchema, handleGetScreenshot } from './tools/get-screenshot.js';
 import { fetchFigmaImages, downloadImage } from '../api/client.js';
 import {
   LAYOUT_STRATEGY_NAME,
@@ -277,6 +278,33 @@ server.tool(
   async (params) => {
     try {
       const result = await handleSearchToken(params, cache, fetchFigmaData);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'get_screenshot',
+  'Export a screenshot of a Figma frame with structural summary for visual verification',
+  getScreenshotSchema,
+  async (params) => {
+    try {
+      const result = await handleGetScreenshot(
+        params,
+        cache,
+        fetchFigmaData,
+        fetchFigmaImages,
+        downloadImage,
+      );
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };

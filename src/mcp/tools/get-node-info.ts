@@ -5,9 +5,11 @@
 
 import { z } from 'zod';
 import type { TokenCache, FetchCallback } from '../cache.js';
-import type { NodeDetail } from '../../types/mcp.js';
+import type { NodeDetail, NodeDetailDeduped } from '../../types/mcp.js';
 import { mapNodeToDetail } from '../mappers/css-mapper.js';
 import { trimNodeDetail, DEFAULT_MAX_CHARS } from '../utils/response-limiter.js';
+import { deduplicateStyles } from '../utils/style-dedup.js';
+import { collapseSvgGroups } from '../utils/svg-collapse.js';
 
 export const getNodeInfoSchema = {
   file_id: z.string().describe('Figma file ID or URL'),
@@ -18,6 +20,11 @@ export const getNodeInfoSchema = {
     .optional()
     .default(DEFAULT_MAX_CHARS)
     .describe('Max response size in chars; auto-trims if exceeded'),
+  deduplicate_styles: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Replace repeated fills/strokes/effects with hash refs to reduce size'),
 };
 
 export interface GetNodeInfoParams {
@@ -25,10 +32,11 @@ export interface GetNodeInfoParams {
   node_id: string;
   depth?: number;
   max_response_chars?: number;
+  deduplicate_styles?: boolean;
 }
 
 export interface GetNodeInfoResult {
-  node: NodeDetail;
+  node: NodeDetail | NodeDetailDeduped;
   _truncated?: boolean;
   _message?: string;
 }
@@ -53,9 +61,21 @@ export async function handleGetNodeInfo(
     );
   }
 
-  const detail = mapNodeToDetail(node.raw, entry.tokens, params.depth ?? 5);
+  let detail = mapNodeToDetail(node.raw, entry.tokens, params.depth ?? 5);
+
+  // SVG collapse first, then dedup (per T030 pipeline order)
+  detail = collapseSvgGroups(detail);
+
   const maxChars = params.max_response_chars ?? DEFAULT_MAX_CHARS;
   const trimResult = trimNodeDetail(detail, maxChars);
+
+  if (params.deduplicate_styles) {
+    const deduped = deduplicateStyles(trimResult.data);
+    if (trimResult.truncated) {
+      return { node: deduped, _truncated: true, _message: trimResult.message! };
+    }
+    return { node: deduped };
+  }
 
   if (trimResult.truncated) {
     return {

@@ -40,6 +40,10 @@ export type { FetchOptions, ImageExportOptions } from './api/client.js';
 export { TokenCache } from './mcp/cache.js';
 export type { FetchResult, FetchCallback } from './mcp/cache.js';
 export { mapNodeToDetail } from './mcp/mappers/css-mapper.js';
+export { linearGradientCSS, radialGradientCSS, conicGradientCSS, diamondGradientCSS } from './mcp/mappers/gradient-css.js';
+export type { GradientHandlePositions, FigmaGradientStop } from './mcp/mappers/gradient-css.js';
+export { deduplicateStyles, deduplicateStylesArray } from './mcp/utils/style-dedup.js';
+export { collapseSvgGroups } from './mcp/utils/svg-collapse.js';
 
 // MCP types
 export type {
@@ -58,6 +62,10 @@ export type {
   FrameSummary,
   TokenSearchResult,
   TokenMatch,
+  GradientStop,
+  SharedStyleRef,
+  SharedStylesMap,
+  NodeDetailDeduped,
 } from './types/mcp.js';
 
 // Types
@@ -68,7 +76,7 @@ export type {
   RGBA,
   ColorToken,
   GradientToken,
-  GradientStop,
+  GradientStop as GradientTokenStop,
   TypographyToken,
   SpacingToken,
   RadiusToken,
