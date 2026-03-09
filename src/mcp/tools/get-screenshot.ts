@@ -9,17 +9,18 @@ import * as path from 'node:path';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import type { ImageExportOptions } from '../../api/client.js';
 import { mapNodeToDetail } from '../mappers/css-mapper.js';
+import { resolveParams } from '../utils/normalize-node-id.js';
 
 export const getScreenshotSchema = {
-  file_id: z.string().describe('Figma file ID or URL'),
-  node_id: z.string().describe('Node to screenshot (usually a frame)'),
+  file_id: z.string().describe('Figma file ID or full Figma URL (e.g. https://www.figma.com/design/FILE_ID/...)'),
+  node_id: z.string().optional().describe('Node to screenshot (usually a frame). Auto-extracted from URL if not provided.'),
   scale: z.number().optional().default(1).describe('Export scale (1-4)'),
-  output_dir: z.string().optional().default('./figma-assets').describe('Directory to save'),
+  output_dir: z.string().optional().default('.figma').describe('Directory to save'),
 };
 
 export interface GetScreenshotParams {
   file_id: string;
-  node_id: string;
+  node_id?: string;
   scale?: number;
   output_dir?: string;
 }
@@ -63,18 +64,23 @@ export async function handleGetScreenshot(
   fetchImagesFn: FetchImagesFn,
   downloadImageFn: DownloadImageFn,
 ): Promise<GetScreenshotResult> {
-  const entry = await cache.getOrFetch(params.file_id, fetchFn);
+  const { file_id: fileId, node_id: nodeId } = resolveParams(params.file_id, params.node_id);
+  if (!nodeId) {
+    throw new Error('node_id is required. Provide it explicitly or include node-id in the Figma URL.');
+  }
 
-  const node = entry.nodes.find((n) => n.node_id === params.node_id);
+  const entry = await cache.getOrFetch(fileId, fetchFn);
+
+  const node = entry.nodes.find((n) => n.node_id === nodeId);
   if (!node) {
     throw new Error(
-      `Node "${params.node_id}" not found in file "${params.file_id}". ` +
+      `Node "${nodeId}" not found in file "${fileId}". ` +
         `Use get_document_structure to discover available node IDs.`,
     );
   }
 
   const scale = params.scale ?? 1;
-  const outputDir = params.output_dir ?? './figma-assets';
+  const outputDir = params.output_dir ?? '.figma';
 
   const token = process.env.FIGMA_TOKEN;
   if (!token) {
@@ -82,14 +88,14 @@ export async function handleGetScreenshot(
   }
 
   // Get render URL (always PNG for screenshots)
-  const imageUrls = await fetchImagesFn(entry.file_id, token, [params.node_id], {
+  const imageUrls = await fetchImagesFn(fileId, token, [nodeId], {
     format: 'png',
     scale,
   });
 
-  const imageUrl = imageUrls[params.node_id];
+  const imageUrl = imageUrls[nodeId];
   if (!imageUrl) {
-    throw new Error(`Figma API returned no image URL for node "${params.node_id}".`);
+    throw new Error(`Figma API returned no image URL for node "${nodeId}".`);
   }
 
   // Download binary
@@ -105,7 +111,8 @@ export async function handleGetScreenshot(
   fs.writeFileSync(filePath, Buffer.from(buffer));
 
   // Build structural summary from mapped detail
-  const detail = mapNodeToDetail(node.raw, entry.tokens, 1);
+  const fileCtx = { styles: entry.file.styles, components: entry.file.components };
+  const detail = mapNodeToDetail(node.raw, entry.tokens, 1, fileCtx);
 
   const dominantFills = detail.fills
     .filter((f) => f.fill_type === 'solid' && f.value_hex)

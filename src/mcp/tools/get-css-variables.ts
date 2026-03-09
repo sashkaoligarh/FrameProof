@@ -8,9 +8,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import { generateCSS } from '../../writers/css.js';
+import { resolveParams } from '../utils/normalize-node-id.js';
 
 export const getCSSVariablesSchema = {
-  file_id: z.string().describe('Figma file ID or URL'),
+  file_id: z.string().describe('Figma file ID or full Figma URL (e.g. https://www.figma.com/design/FILE_ID/...)'),
   save_to: z.string().optional().describe('File path to save CSS (if omitted, returns as text)'),
 };
 
@@ -30,8 +31,9 @@ export async function handleGetCSSVariables(
   cache: TokenCache,
   fetchFn: FetchCallback,
 ): Promise<GetCSSVariablesResult> {
-  const entry = await cache.getOrFetch(params.file_id, fetchFn);
-  const css = generateCSS(entry.tokens, entry.file_id);
+  const { file_id: fileId } = resolveParams(params.file_id);
+  const entry = await cache.getOrFetch(fileId, fetchFn);
+  const css = generateCSS(entry.tokens, fileId);
 
   if (params.save_to) {
     const dir = path.dirname(params.save_to);

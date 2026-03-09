@@ -10,3 +10,5 @@ Thumbs.db
 *.tmp
 *.swp
 /specs
+# Figma MCP output (tokens, screenshots, analysis) — generated per-project
+.figma/

@@ -5,37 +5,125 @@
 
 export const READ_DESIGN_STRATEGY_NAME = 'read_design_strategy';
 export const READ_DESIGN_STRATEGY_DESCRIPTION =
-  'How to read and understand a Figma design for implementation';
+  'How to read and understand a Figma design for pixel-perfect implementation';
 
-export const READ_DESIGN_STRATEGY_MESSAGE = `When reading a Figma design for implementation:
+export const READ_DESIGN_STRATEGY_MESSAGE = `When reading a Figma design for implementation, follow this workflow:
 
-1. Start with get_document_structure to understand the file layout
-   - Note page names and their purposes
-   - Identify top-level frames (they are usually screens/views)
-   - Note component count for design system scope
+IMPORTANT: All output files (tokens, screenshots, analysis) go to the .figma/ directory.
+This directory is gitignored and should never be committed.
 
-2. Load tokens with get_design_tokens
-   - Review the color palette (sorted by usage — most-used colors are primary)
-   - Review spacing scale (these are your layout building blocks)
-   - Review typography styles (identify heading vs body vs caption patterns)
+## Phase 1: Overview (before writing any code)
 
-3. For each screen/component to implement:
-   a. Call get_node_info with the frame's node ID
-   b. Read the response top-down: root frame → children → nested children
-   c. Pay attention to layout.mode (HORIZONTAL/VERTICAL) for flex direction
-   d. Use css_variable fields directly — they map to the design system
-   e. Check fill_type for each fill: "solid", "gradient", or "image"
-   f. Check overflow, opacity, rotation, blend_mode_css for visual fidelity
-   g. For large trees, use deduplicate_styles: true to reduce response size
+1. get_screenshot — take a full-page screenshot for visual reference
+2. get_document_structure — understand pages, frames, component counts
+3. get_design_tokens with save_to=".figma/tokens.json" — save tokens to file
+4. get_css_variables with save_to=".figma/design-system.css" — generate CSS variables file
+   - Import this CSS file in your project for all token references
+5. get_frame_overview — get a lightweight map of all sections in the page
+   - Returns each section's name, type, dimensions, visibility, component refs
+   - Shows gap_to_next between siblings (useful for spacing verification)
+   - Shows main_component_name for instances (resolved from file metadata)
+   - Use this to plan which sections to implement and in what order
 
-4. For images/icons:
-   - Call export_node_image with format=svg for icons
-   - Call export_node_image with format=png and scale=2 for raster images
+## Phase 2: Section-by-section analysis
 
-5. When uncertain about a value:
-   - Call search_token with the raw value to find the matching CSS variable
+For large pages (3+ sections), NEVER load all sections at once. Process one section at a time:
 
-6. For visual verification after implementing:
-   - Call get_screenshot for the frame to get a reference screenshot
-   - Compare your implementation against the exported screenshot
-   - The summary field provides structural hints (child count, layout mode, dimensions)`;
+1. batch_screenshots — screenshot all sections at once for visual reference
+2. For each section:
+   a. get_node_info with save_to=".figma/{section_name}.json" — saves full data to file
+   b. Read the saved file to implement the section
+   c. Move to next section after completing the current one
+
+For small components (1-2 sections), you can use get_node_info without save_to.
+
+## Phase 3: Full-page export (alternative to section-by-section)
+
+For comprehensive analysis, use export_page_analysis:
+- Generates a full page analysis as markdown or JSON file
+- Includes structure, CSS mappings, and **design notes** with attention points
+- Read the file section-by-section using offset/limit parameters
+- Design notes highlight: mixed text colors, background images, absolute elements,
+  component instances, non-standard values, orphan colors, inconsistent radii, text overflow
+
+## Critical Details Checklist
+
+ALWAYS check these for EVERY section — missing any of these creates visual bugs:
+
+### Token hints (non-standard values) — NEW
+- Check token_hints array on each node — it flags values that don't match any design token
+- Example: padding-top: 17px with nearest token --spacing-16 (delta: +1)
+- This usually means: designer rounded incorrectly, or it's an intentional override
+- ALWAYS use the token value unless there's a clear reason for the override
+
+### Applied styles (Figma shared styles) — NEW
+- Check applied_styles on nodes — shows the Figma shared style name
+- Example: { fill: { name: "Primary/Blue" }, text: { name: "Body/Regular" } }
+- This tells you the semantic intent — use matching CSS class/variable names
+
+### Constraints and sizing — NEW
+- Check constraints on nodes — horizontal/vertical positioning constraints
+- STRETCH → width: 100% or height: 100%
+- CENTER → margin: 0 auto
+- Check min_width, max_width, min_height, max_height — critical for responsive behavior
+- Nodes with FILL sizing + max_width need max-width in CSS
+
+### Text with mixed colors (partial accents)
+- Check text_segments array — if it has multiple entries with different color_hex values,
+  the text has mixed coloring (e.g., "Хмарна **платформа**" where "платформа" is blue)
+- Implement with <span> tags wrapping each differently-colored segment
+- Use the exact color from each segment's color_hex/color_css
+
+### Background images and decorative elements
+- Check fills for fill_type: "image" — these are background images
+- ALWAYS verify: scale_mode_css (cover/contain/repeat), position, dimensions
+- Check for position: "absolute" elements — these are often decorative shapes,
+  background patterns, or floating icons. Verify their exact x/y position relative to parent
+- Call export_node_image to download the actual image asset
+
+### Component instances — go to main component
+- When component_info.is_instance is true, the element is based on a main component
+- main_component_name shows the resolved name (e.g., "Button/Primary" vs instance name "Submit")
+- main_component_description may contain usage notes from the designer
+- Call get_node_info on component_info.component_id to see the FULL component definition
+- This reveals the intended design, variants, and interactive states
+- Do NOT guess the component structure from the instance alone — always check the main component
+
+### Element presence/absence
+- Check visible: false elements — they exist in Figma but should NOT be rendered
+- Check opacity < 1 — these elements ARE visible but semi-transparent
+- Count exact children in each section and compare with your implementation
+- Missing elements (buttons, icons, dividers, badges) are common implementation errors
+
+### Overflow and clipping
+- overflow: "hidden" means content is clipped — ALWAYS set overflow: hidden in CSS
+- Children extending beyond parent bounds will be visually cut off
+- This is especially important for hero sections with background images
+
+### Spacing and alignment
+- layout.primary_axis_align and counter_axis_align control flex alignment
+- Check EVERY padding value (top, right, bottom, left) — they may all differ
+- item_spacing is the gap between children — match exactly
+- position: "absolute" elements are NOT in the auto-layout flow
+- Check gap_to_next in frame overview for spacing between sibling sections
+
+### Visual effects
+- blend_mode_css → apply as mix-blend-mode
+- opacity → apply as CSS opacity
+- rotation → apply as transform: rotate()
+- effects with css_property "backdrop-filter" → apply backdrop-filter: blur()
+
+### Gradients
+- Use css_value directly from gradient fills — it contains pre-computed CSS
+- Do NOT attempt to recreate gradients from raw values
+
+## Images and icons workflow
+- Icons: export_node_image with format=svg
+- Raster images: export_node_image with format=png and scale=2
+- Background images: check scale_mode_css for correct background-size
+
+## Verification
+- After implementing each section, compare against the section screenshot
+- Check: element count, colors, spacing, font sizes, background positions
+- Use get_screenshot for the full page after all sections are complete
+- Pay special attention to token_hints — these are the most common source of subtle bugs`;

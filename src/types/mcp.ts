@@ -101,6 +101,36 @@ export interface LayoutInfo {
   sizing_vertical: 'FIXED' | 'HUG' | 'FILL' | null;
 }
 
+// ─── Constraints ────────────────────────────────────────
+
+export interface ConstraintsInfo {
+  horizontal: string;
+  vertical: string;
+  /** CSS hint for horizontal constraint */
+  horizontal_css: string;
+  /** CSS hint for vertical constraint */
+  vertical_css: string;
+}
+
+// ─── Applied Styles (Figma shared styles) ───────────────
+
+export interface AppliedStyles {
+  fill?: { id: string; name: string };
+  stroke?: { id: string; name: string };
+  text?: { id: string; name: string };
+  effect?: { id: string; name: string };
+}
+
+// ─── Token Hints (non-standard values) ─────────────────
+
+export interface TokenHint {
+  property: string;
+  actual_value: number | string;
+  nearest_token: string;
+  nearest_value: number | string;
+  delta: number;
+}
+
 // ─── Component Reference ────────────────────────────────
 
 export interface ComponentRef {
@@ -108,6 +138,10 @@ export interface ComponentRef {
   component_name: string;
   is_instance: boolean;
   variant_properties: Record<string, string> | null;
+  /** Resolved name of the main component (from file.components). Present only for instances. */
+  main_component_name?: string;
+  /** Description of the main component. Present only for instances. */
+  main_component_description?: string;
 }
 
 // ─── Text Segments ─────────────────────────────────────
@@ -162,6 +196,20 @@ export interface NodeDetail {
   component_info: ComponentRef | null;
   /** Number of collapsed vector children — present only when node_type is IMAGE_SVG. */
   collapsed_children_count?: number;
+  /** Figma constraints (horizontal/vertical). Present for non-auto-layout children. */
+  constraints?: ConstraintsInfo;
+  /** Min width in px. Present only when set in Figma. */
+  min_width?: number;
+  /** Max width in px. Present only when set in Figma. */
+  max_width?: number;
+  /** Min height in px. Present only when set in Figma. */
+  min_height?: number;
+  /** Max height in px. Present only when set in Figma. */
+  max_height?: number;
+  /** Figma shared styles applied to this node. */
+  applied_styles?: AppliedStyles;
+  /** Flags for values that don't exactly match any design token. */
+  token_hints?: TokenHint[];
 }
 
 // ─── Gradient Stop (internal use for gradient-css.ts) ───
@@ -180,7 +228,7 @@ export type SharedStyleRef = string;
 /** Map of style ref → fill/stroke/effect object */
 export type SharedStylesMap = Record<string, CSSMappedFill | CSSMappedStroke | CSSMappedEffect>;
 
-/** Same as NodeDetail but fills/strokes/effects can be string refs. */
+/** Same as NodeDetail but fills/strokes/effects can be string refs. Inherits all new fields (constraints, min/max, applied_styles, token_hints). */
 export interface NodeDetailDeduped extends Omit<NodeDetail, 'fills' | 'strokes' | 'effects' | 'children'> {
   fills: (CSSMappedFill | SharedStyleRef)[];
   strokes: (CSSMappedStroke | SharedStyleRef)[];

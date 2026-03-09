@@ -7,9 +7,10 @@ import { z } from 'zod';
 import type { Node } from '@figma/rest-api-spec';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import type { DocumentStructure, PageSummary, FrameSummary } from '../../types/mcp.js';
+import { resolveParams } from '../utils/normalize-node-id.js';
 
 export const getDocumentStructureSchema = {
-  file_id: z.string().describe('Figma file ID or URL'),
+  file_id: z.string().describe('Figma file ID or full Figma URL (e.g. https://www.figma.com/design/FILE_ID/...)'),
 };
 
 export interface GetDocumentStructureParams {
@@ -21,7 +22,8 @@ export async function handleGetDocumentStructure(
   cache: TokenCache,
   fetchFn: FetchCallback,
 ): Promise<DocumentStructure> {
-  const entry = await cache.getOrFetch(params.file_id, fetchFn);
+  const { file_id: fileId } = resolveParams(params.file_id);
+  const entry = await cache.getOrFetch(fileId, fetchFn);
   const doc = entry.file.document as Record<string, unknown>;
   const children = (doc.children ?? []) as Array<Record<string, unknown>>;
 

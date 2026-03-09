@@ -4,7 +4,7 @@
  */
 
 import type { Node } from '@figma/rest-api-spec';
-import type { AllTokens, ColorToken, ShadowToken } from '../../types/tokens.js';
+import type { AllTokens, ColorToken, ShadowToken, StyleMeta, ComponentMeta } from '../../types/tokens.js';
 import type {
   NodeDetail,
   CSSMappedFill,
@@ -15,6 +15,9 @@ import type {
   TextSegment,
   LayoutInfo,
   ComponentRef,
+  ConstraintsInfo,
+  AppliedStyles,
+  TokenHint,
 } from '../../types/mcp.js';
 import {
   linearGradientCSS,
@@ -26,16 +29,24 @@ import type { GradientHandlePositions, FigmaGradientStop } from './gradient-css.
 
 const DEFAULT_DEPTH = 5;
 
+/** Optional file-level context for resolving shared styles and component names. */
+export interface FileContext {
+  styles: Record<string, StyleMeta>;
+  components: Record<string, ComponentMeta>;
+}
+
 /**
  * Map a raw Figma node to a NodeDetail with CSS variable mappings.
  * Recursively processes children up to `maxDepth`.
+ * Pass `fileCtx` to resolve shared style names and main component names.
  */
 export function mapNodeToDetail(
   rawNode: Node,
   tokens: AllTokens,
   maxDepth: number = DEFAULT_DEPTH,
+  fileCtx?: FileContext,
 ): NodeDetail {
-  return buildNodeDetail(rawNode, tokens, 0, maxDepth);
+  return buildNodeDetail(rawNode, tokens, 0, maxDepth, fileCtx);
 }
 
 // ---------------------------------------------------------------------------
@@ -47,6 +58,7 @@ function buildNodeDetail(
   tokens: AllTokens,
   currentDepth: number,
   maxDepth: number,
+  fileCtx?: FileContext,
 ): NodeDetail {
   const r = raw as Record<string, unknown>;
   const bbox = r.absoluteBoundingBox as
@@ -84,6 +96,18 @@ function buildNodeDetail(
   const layoutPositioning = r.layoutPositioning as string | undefined;
   const position: 'absolute' | 'relative' = layoutPositioning === 'ABSOLUTE' ? 'absolute' : 'relative';
 
+  // --- Constraints ---
+  const constraints = mapConstraints(r);
+
+  // --- Min/Max sizes ---
+  const minWidth = r.minWidth as number | undefined;
+  const maxWidth = r.maxWidth as number | undefined;
+  const minHeight = r.minHeight as number | undefined;
+  const maxHeight = r.maxHeight as number | undefined;
+
+  // --- Applied styles (Figma shared styles) ---
+  const appliedStyles = mapAppliedStyles(r, fileCtx);
+
   const detail: NodeDetail = {
     node_id: (r.id as string) ?? '',
     name: (r.name as string) ?? '',
@@ -107,13 +131,35 @@ function buildNodeDetail(
     typography: mapTypography(r, tokens),
     text_content: raw.type === 'TEXT' ? ((r.characters as string) ?? null) : null,
     text_segments: mapTextSegments(r, tokens),
-    children: mapChildren(r, tokens, currentDepth, maxDepth),
-    component_info: mapComponentInfo(r),
+    children: mapChildren(r, tokens, currentDepth, maxDepth, fileCtx),
+    component_info: mapComponentInfo(r, fileCtx),
   };
 
   // Omit opacity when 1.0 or absent (T012)
   if (opacityVal !== undefined && opacityVal < 1) {
     detail.opacity = opacityVal;
+  }
+
+  // Constraints (only when meaningful)
+  if (constraints) {
+    detail.constraints = constraints;
+  }
+
+  // Min/max sizes (only when set)
+  if (minWidth !== undefined && minWidth > 0) detail.min_width = minWidth;
+  if (maxWidth !== undefined && maxWidth < Infinity) detail.max_width = maxWidth;
+  if (minHeight !== undefined && minHeight > 0) detail.min_height = minHeight;
+  if (maxHeight !== undefined && maxHeight < Infinity) detail.max_height = maxHeight;
+
+  // Applied styles (only when present)
+  if (appliedStyles) {
+    detail.applied_styles = appliedStyles;
+  }
+
+  // Token hints (non-standard values)
+  const hints = collectTokenHints(detail, tokens);
+  if (hints.length > 0) {
+    detail.token_hints = hints;
   }
 
   return detail;
@@ -565,6 +611,7 @@ function mapChildren(
   tokens: AllTokens,
   currentDepth: number,
   maxDepth: number,
+  fileCtx?: FileContext,
 ): NodeDetail[] {
   if (currentDepth >= maxDepth) return [];
 
@@ -572,22 +619,36 @@ function mapChildren(
   if (!children || !Array.isArray(children)) return [];
 
   return children.map((child) =>
-    buildNodeDetail(child, tokens, currentDepth + 1, maxDepth),
+    buildNodeDetail(child, tokens, currentDepth + 1, maxDepth, fileCtx),
   );
 }
 
 // ─── Component Info ─────────────────────────────────────
 
-function mapComponentInfo(r: Record<string, unknown>): ComponentRef | null {
+function mapComponentInfo(r: Record<string, unknown>, fileCtx?: FileContext): ComponentRef | null {
   const type = r.type as string;
 
   if (type === 'INSTANCE') {
-    return {
-      component_id: (r.componentId as string) ?? '',
+    const componentId = (r.componentId as string) ?? '';
+    const ref: ComponentRef = {
+      component_id: componentId,
       component_name: (r.name as string) ?? '',
       is_instance: true,
       variant_properties: (r.componentProperties as Record<string, string>) ?? null,
     };
+
+    // Resolve main component name and description from file context
+    if (fileCtx?.components && componentId) {
+      const mainComp = fileCtx.components[componentId];
+      if (mainComp) {
+        ref.main_component_name = mainComp.name;
+        if (mainComp.description) {
+          ref.main_component_description = mainComp.description;
+        }
+      }
+    }
+
+    return ref;
   }
 
   if (type === 'COMPONENT') {
@@ -679,4 +740,221 @@ function rgbaToHex(r: number, g: number, b: number): string {
       .toString(16)
       .padStart(2, '0');
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+// ─── Constraints ────────────────────────────────────────
+
+function mapConstraints(r: Record<string, unknown>): ConstraintsInfo | null {
+  const constraints = r.constraints as { horizontal?: string; vertical?: string } | undefined;
+  if (!constraints) return null;
+
+  const h = constraints.horizontal ?? 'MIN';
+  const v = constraints.vertical ?? 'MIN';
+
+  // Skip if both are default MIN — no useful info
+  if (h === 'MIN' && v === 'MIN') return null;
+
+  const hCssMap: Record<string, string> = {
+    MIN: 'align-self: flex-start',
+    CENTER: 'margin-inline: auto',
+    MAX: 'align-self: flex-end',
+    STRETCH: 'width: 100%',
+    SCALE: 'width: percentage-based',
+  };
+
+  const vCssMap: Record<string, string> = {
+    MIN: 'align-self: flex-start',
+    CENTER: 'margin-block: auto',
+    MAX: 'align-self: flex-end',
+    STRETCH: 'height: 100%',
+    SCALE: 'height: percentage-based',
+  };
+
+  return {
+    horizontal: h,
+    vertical: v,
+    horizontal_css: hCssMap[h] ?? h,
+    vertical_css: vCssMap[v] ?? v,
+  };
+}
+
+// ─── Applied Styles (Figma shared styles) ───────────────
+
+function mapAppliedStyles(r: Record<string, unknown>, fileCtx?: FileContext): AppliedStyles | null {
+  const rawStyles = r.styles as Record<string, string> | undefined;
+  if (!rawStyles || !fileCtx?.styles) return null;
+
+  const result: AppliedStyles = {};
+  let hasAny = false;
+
+  for (const [type, styleId] of Object.entries(rawStyles)) {
+    const meta = fileCtx.styles[styleId];
+    if (meta) {
+      const key = type.toLowerCase() as keyof AppliedStyles;
+      if (key === 'fill' || key === 'stroke' || key === 'text' || key === 'effect') {
+        result[key] = { id: styleId, name: meta.name };
+        hasAny = true;
+      }
+    }
+  }
+
+  return hasAny ? result : null;
+}
+
+// ─── Token Hints (non-standard values) ─────────────────
+
+function collectTokenHints(detail: NodeDetail, tokens: AllTokens): TokenHint[] {
+  const hints: TokenHint[] = [];
+
+  // Check padding values against spacing tokens
+  if (detail.layout) {
+    const { padding } = detail.layout;
+    for (const [side, value] of Object.entries(padding)) {
+      if (value === 0) continue;
+      const nearest = findNearestSpacing(value, tokens);
+      if (nearest && nearest.delta !== 0) {
+        hints.push({
+          property: `padding-${side}`,
+          actual_value: value,
+          nearest_token: `var(--spacing-${nearest.value})`,
+          nearest_value: nearest.value,
+          delta: nearest.delta,
+        });
+      }
+    }
+
+    // Check item_spacing
+    if (detail.layout.item_spacing > 0) {
+      const nearest = findNearestSpacing(detail.layout.item_spacing, tokens);
+      if (nearest && nearest.delta !== 0) {
+        hints.push({
+          property: 'gap',
+          actual_value: detail.layout.item_spacing,
+          nearest_token: `var(--spacing-${nearest.value})`,
+          nearest_value: nearest.value,
+          delta: nearest.delta,
+        });
+      }
+    }
+  }
+
+  // Check corner radius
+  if (detail.corner_radius && !detail.corner_radius.css_variable) {
+    const nearest = findNearestRadius(detail.corner_radius.value, tokens);
+    if (nearest && nearest.delta !== 0) {
+      hints.push({
+        property: 'border-radius',
+        actual_value: detail.corner_radius.value,
+        nearest_token: `var(--radius-${nearest.value})`,
+        nearest_value: nearest.value,
+        delta: nearest.delta,
+      });
+    }
+  }
+
+  // Check fill colors against color tokens
+  for (const fill of detail.fills) {
+    if (fill.fill_type === 'solid' && fill.value_hex && !fill.css_variable) {
+      const nearest = findNearestColor(fill.value_hex, tokens);
+      if (nearest && nearest.distance > 0 && nearest.distance < 30) {
+        hints.push({
+          property: 'color',
+          actual_value: fill.value_hex,
+          nearest_token: `var(--color-${nearest.name})`,
+          nearest_value: nearest.hex,
+          delta: Math.round(nearest.distance),
+        });
+      }
+    }
+  }
+
+  // Check font size
+  if (detail.typography && !detail.typography.font_size_css) {
+    const nearest = findNearestFontSize(detail.typography.font_size, tokens);
+    if (nearest && nearest.delta !== 0) {
+      hints.push({
+        property: 'font-size',
+        actual_value: detail.typography.font_size,
+        nearest_token: `var(--font-size-${nearest.value})`,
+        nearest_value: nearest.value,
+        delta: nearest.delta,
+      });
+    }
+  }
+
+  return hints;
+}
+
+function findNearestSpacing(value: number, tokens: AllTokens): { value: number; delta: number } | null {
+  if (tokens.spacing.length === 0) return null;
+  let best = tokens.spacing[0];
+  let bestDelta = Math.abs(best.value - value);
+  for (const s of tokens.spacing) {
+    const d = Math.abs(s.value - value);
+    if (d < bestDelta) {
+      best = s;
+      bestDelta = d;
+    }
+  }
+  // Exact match means the css_variable was already set
+  if (bestDelta === 0) return null;
+  return { value: best.value, delta: value - best.value };
+}
+
+function findNearestRadius(value: number, tokens: AllTokens): { value: number; delta: number } | null {
+  if (tokens.radii.length === 0) return null;
+  let best = tokens.radii[0];
+  let bestDelta = Math.abs(best.value - value);
+  for (const r of tokens.radii) {
+    const d = Math.abs(r.value - value);
+    if (d < bestDelta) {
+      best = r;
+      bestDelta = d;
+    }
+  }
+  if (bestDelta === 0) return null;
+  return { value: best.value, delta: value - best.value };
+}
+
+function findNearestColor(hex: string, tokens: AllTokens): { name: string; hex: string; distance: number } | null {
+  if (tokens.colors.length === 0) return null;
+  const [qr, qg, qb] = hexToRgbInts(hex);
+  let bestName = '';
+  let bestHex = '';
+  let bestDist = Infinity;
+  for (const c of tokens.colors) {
+    const [cr, cg, cb] = hexToRgbInts(c.value_hex);
+    const d = Math.sqrt((qr - cr) ** 2 + (qg - cg) ** 2 + (qb - cb) ** 2);
+    if (d < bestDist) {
+      bestDist = d;
+      bestName = c.name;
+      bestHex = c.value_hex;
+    }
+  }
+  return { name: bestName, hex: bestHex, distance: bestDist };
+}
+
+function findNearestFontSize(value: number, tokens: AllTokens): { value: number; delta: number } | null {
+  if (tokens.typography.length === 0) return null;
+  let bestSize = tokens.typography[0].font_size;
+  let bestDelta = Math.abs(bestSize - value);
+  for (const t of tokens.typography) {
+    const d = Math.abs(t.font_size - value);
+    if (d < bestDelta) {
+      bestSize = t.font_size;
+      bestDelta = d;
+    }
+  }
+  if (bestDelta === 0) return null;
+  return { value: bestSize, delta: value - bestSize };
+}
+
+function hexToRgbInts(hex: string): [number, number, number] {
+  let h = hex.startsWith('#') ? hex.slice(1) : hex;
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ];
 }

@@ -47,6 +47,9 @@ Sizing and positioning:
 - layout.sizing_horizontal/sizing_vertical: FILL → width/height: 100%, HUG → auto, FIXED → explicit px
 - position: "absolute" → position: absolute with x/y as left/top
 - position: "relative" → element participates in auto-layout flow
+- constraints.horizontal: STRETCH → width: 100%, CENTER → margin: 0 auto
+- min_width/max_width/min_height/max_height: apply directly as CSS min-width, max-width, etc.
+  These are critical for responsive behavior — never ignore them
 
 Strokes and borders:
 - alignment_css hints: "border" → use border, "box-shadow-inset" → use inset box-shadow, "outline" → use outline
@@ -55,4 +58,38 @@ Strokes and borders:
 Effects:
 - css_property: "backdrop-filter" → apply as backdrop-filter (background blur)
 - css_property: "filter" → apply as filter (layer blur)
-- css_property: "box-shadow" → apply as box-shadow`;
+- css_property: "box-shadow" → apply as box-shadow
+
+Component instances — IMPORTANT:
+- When you encounter a component_info with is_instance: true, the node is a copy of a main component
+- main_component_name shows the canonical component name (may differ from instance name)
+- main_component_description contains designer notes about usage
+- Always call get_node_info on the component_info.component_id to understand the FULL component design
+- The main component defines the canonical structure, states, and variants
+- Do NOT infer the component structure only from the instance — it may be overridden or simplified
+- Check variant_properties for the current variant state
+
+Applied styles — IMPORTANT:
+- When applied_styles is present, it shows the Figma shared style name for fills, strokes, text, effects
+- Example: applied_styles.text.name = "Heading/H2" → use a matching CSS class
+- This reveals the semantic intent behind raw values
+- Overrides on top of shared styles should be applied as inline overrides
+
+Token hints — IMPORTANT:
+- When token_hints is present, some values don't exactly match design tokens
+- Example: { property: "padding-top", actual_value: 17, nearest_token: "var(--spacing-16)", delta: 1 }
+- Usually this means a designer error — use the nearest token value
+- If delta > 2px, verify with the designer whether it's intentional
+
+Text with mixed styling — IMPORTANT:
+- When text_segments has multiple entries, the text has character-level style overrides
+- Each segment may have different color_hex, font_family, font_size, font_weight
+- Implement by wrapping each segment in a <span> with its specific styles
+- This is common for: accented words in headings, linked text, highlighted text
+
+Decorative and background elements — IMPORTANT:
+- Elements with position: "absolute" that have no text_content are usually decorative
+- These include: background shapes, gradient overlays, pattern images, floating icons
+- Verify their EXACT position (x, y) relative to the parent frame
+- Common mistake: ignoring these elements or misplacing them
+- Use z-index layering that matches Figma's layer order (first child = bottom layer)`;

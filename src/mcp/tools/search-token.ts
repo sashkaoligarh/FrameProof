@@ -7,9 +7,10 @@ import { z } from 'zod';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import type { TokenSearchResult, TokenMatch } from '../../types/mcp.js';
 import type { AllTokens } from '../../types/tokens.js';
+import { resolveParams } from '../utils/normalize-node-id.js';
 
 export const searchTokenSchema = {
-  file_id: z.string().describe('Figma file ID or URL'),
+  file_id: z.string().describe('Figma file ID or full Figma URL (e.g. https://www.figma.com/design/FILE_ID/...)'),
   query: z.string().describe('Value to search (hex color, number, font name)'),
   category: z
     .enum(['color', 'typography', 'spacing', 'radius', 'shadow', 'all'])
@@ -31,7 +32,8 @@ export async function handleSearchToken(
   cache: TokenCache,
   fetchFn: FetchCallback,
 ): Promise<TokenSearchResult> {
-  const entry = await cache.getOrFetch(params.file_id, fetchFn);
+  const { file_id: fileId } = resolveParams(params.file_id);
+  const entry = await cache.getOrFetch(fileId, fetchFn);
   const tokens = entry.tokens;
   const category = params.category ?? 'all';
   const query = params.query.trim();

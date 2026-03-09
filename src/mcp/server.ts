@@ -23,6 +23,9 @@ import { getDocumentStructureSchema, handleGetDocumentStructure } from './tools/
 import { getDesignContextSchema, handleGetDesignContext } from './tools/get-design-context.js';
 import { searchTokenSchema, handleSearchToken } from './tools/search-token.js';
 import { getScreenshotSchema, handleGetScreenshot } from './tools/get-screenshot.js';
+import { getFrameOverviewSchema, handleGetFrameOverview } from './tools/get-frame-overview.js';
+import { batchScreenshotsSchema, handleBatchScreenshots } from './tools/batch-screenshots.js';
+import { exportPageAnalysisSchema, handleExportPageAnalysis } from './tools/export-page-analysis.js';
 import { fetchFigmaImages, downloadImage } from '../api/client.js';
 import {
   LAYOUT_STRATEGY_NAME,
@@ -44,7 +47,7 @@ import { FIGMA_TOKENS_TEMPLATE, createTokensResourceHandlers } from './resources
 // ─── Configuration ──────────────────────────────────────
 
 const SERVER_NAME = 'figma-scaler';
-const SERVER_VERSION = '0.1.0';
+const SERVER_VERSION = '0.2.0';
 
 // ─── Shared State ───────────────────────────────────────
 
@@ -61,6 +64,7 @@ export function getFigmaToken(): string | null {
 /**
  * Fetch and parse a Figma file, returning data suitable for caching.
  * This is the default fetch callback used by cache.getOrFetch().
+ * Includes hidden nodes so component variants and hidden layers are accessible.
  */
 export async function fetchFigmaData(fileId: string): Promise<FetchResult> {
   const token = getFigmaToken();
@@ -80,16 +84,21 @@ export async function fetchFigmaData(fileId: string): Promise<FetchResult> {
     file_id: resolvedId,
     token,
     output_dir: '',
-    include_hidden: false,
+    include_hidden: true,
     format: 'all',
     export_images: false,
     image_formats: [],
     image_scale: 1,
   };
 
+  process.stderr.write(`Fetching Figma file ${resolvedId} (this may take 30-60s for large files)...\n`);
   const file = await fetchAndParse(ctx);
-  const nodes = parseDocumentTree(file.document, { includeHidden: false });
+  process.stderr.write(`Parsing ${file.name}: building node tree...\n`);
+  // Include hidden nodes — needed for component variants, hidden states, and decorative layers
+  const nodes = parseDocumentTree(file.document, { includeHidden: true });
+  process.stderr.write(`Extracting tokens from ${nodes.length} nodes...\n`);
   const tokens = extractAllTokens(nodes, file.styles, file.components, file.component_sets);
+  process.stderr.write(`Done: ${tokens.colors.length} colors, ${tokens.typography.length} typography, ${tokens.spacing.length} spacing tokens.\n`);
 
   return { file, nodes, tokens };
 }
@@ -105,7 +114,7 @@ const server = new McpServer({
 
 server.tool(
   'get_design_tokens',
-  'Extract all design tokens (colors, typography, spacing, radii, shadows, images, components) from a Figma file',
+  'Extract design tokens from a Figma file. Default: colors, gradients, typography, spacing, radii, shadows (excludes heavy components/images). Use save_to=".figma/tokens.json" for large files.',
   getDesignTokensSchema,
   async (params) => {
     try {
@@ -129,7 +138,7 @@ server.tool(
 
 server.tool(
   'get_node_info',
-  'Get detailed information about a specific Figma node with CSS variable mappings',
+  'Get detailed info about a Figma node with CSS mappings, constraints, min/max sizes, applied styles, and token hints. Use save_to=".figma/{name}.json" for large nodes.',
   getNodeInfoSchema,
   async (params) => {
     try {
@@ -153,7 +162,7 @@ server.tool(
 
 server.tool(
   'get_nodes_info',
-  'Batch version of get_node_info — get details for multiple Figma nodes at once',
+  'Batch get_node_info for multiple nodes. Use save_to to write to file instead of returning in context.',
   getNodesInfoSchema,
   async (params) => {
     try {
@@ -177,7 +186,7 @@ server.tool(
 
 server.tool(
   'get_css_variables',
-  'Generate CSS Custom Properties from design tokens, optionally saving to a file',
+  'Generate CSS Custom Properties from design tokens. Use save_to=".figma/design-system.css" to save and import in your project.',
   getCSSVariablesSchema,
   async (params) => {
     try {
@@ -305,6 +314,77 @@ server.tool(
         fetchFigmaImages,
         downloadImage,
       );
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ─── New Tools (v0.2.0) ─────────────────────────────────
+
+server.tool(
+  'get_frame_overview',
+  'Lightweight overview of a frame\'s sections — names, types, dimensions, component refs, gaps between siblings, main component names. Use to plan which sections to inspect.',
+  getFrameOverviewSchema,
+  async (params) => {
+    try {
+      const result = await handleGetFrameOverview(params, cache, fetchFigmaData);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'batch_screenshots',
+  'Screenshot all direct children of a frame in one call. Returns file paths for each section.',
+  batchScreenshotsSchema,
+  async (params) => {
+    try {
+      const result = await handleBatchScreenshots(
+        params,
+        cache,
+        fetchFigmaData,
+        fetchFigmaImages,
+        downloadImage,
+      );
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'export_page_analysis',
+  'Full page analysis saved to file (markdown/JSON). Includes CSS mappings, design notes for mixed colors, absolute elements, component refs, non-standard values, orphan colors, missing auto-layout.',
+  exportPageAnalysisSchema,
+  async (params) => {
+    try {
+      const result = await handleExportPageAnalysis(params, cache, fetchFigmaData);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };

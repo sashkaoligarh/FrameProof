@@ -6,9 +6,10 @@
 import { z } from 'zod';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import { generateMarkdown } from '../../writers/markdown.js';
+import { resolveParams } from '../utils/normalize-node-id.js';
 
 export const getDesignContextSchema = {
-  file_id: z.string().describe('Figma file ID or URL'),
+  file_id: z.string().describe('Figma file ID or full Figma URL (e.g. https://www.figma.com/design/FILE_ID/...)'),
 };
 
 export interface GetDesignContextParams {
@@ -20,6 +21,7 @@ export async function handleGetDesignContext(
   cache: TokenCache,
   fetchFn: FetchCallback,
 ): Promise<string> {
-  const entry = await cache.getOrFetch(params.file_id, fetchFn);
-  return generateMarkdown(entry.tokens, entry.file_id, entry.file.name);
+  const { file_id: fileId } = resolveParams(params.file_id);
+  const entry = await cache.getOrFetch(fileId, fetchFn);
+  return generateMarkdown(entry.tokens, fileId, entry.file.name);
 }
