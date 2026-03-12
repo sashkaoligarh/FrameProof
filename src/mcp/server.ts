@@ -89,6 +89,7 @@ export async function fetchFigmaData(fileId: string): Promise<FetchResult> {
     export_images: false,
     image_formats: [],
     image_scale: 1,
+    compress: false,
   };
 
   process.stderr.write(`Fetching Figma file ${resolvedId} (this may take 30-60s for large files)...\n`);

@@ -31,6 +31,7 @@ program
   .option('--export-images', 'Download images (icons as SVG, rasters as PNG)', false)
   .option('--image-format <formats>', 'Image formats: svg,png,jpg (comma-separated)', 'svg,png')
   .option('--image-scale <scale>', 'Scale for PNG/JPG (1-4, e.g. 2 for retina)', '1')
+  .option('--compress', 'Compress raster images via TinyJPG API (requires TINYJPG_TOKEN)', false)
   .action(async (fileIdOrUrl: string, opts: Record<string, unknown>) => {
     const startTime = Date.now();
 
@@ -64,6 +65,15 @@ program
       }
     }
 
+    const compress = opts.compress as boolean;
+
+    // FR-003: When --compress is enabled and --image-scale was not explicitly provided, default to 2x
+    const rawScale = opts.imageScale as string;
+    const explicitlySetScale = process.argv.includes('--image-scale');
+    const imageScale = explicitlySetScale
+      ? (parseFloat(rawScale) || 1)
+      : (compress ? 2 : (parseFloat(rawScale) || 1));
+
     const ctx: ParseContext = {
       file_id: parseFileIdOrUrl(fileIdOrUrl),
       token,
@@ -74,7 +84,8 @@ program
       include_hidden: opts.includeHidden as boolean,
       export_images: opts.exportImages as boolean,
       image_formats: imageFormats,
-      image_scale: parseFloat(opts.imageScale as string) || 1,
+      image_scale: imageScale,
+      compress,
     };
 
     try {

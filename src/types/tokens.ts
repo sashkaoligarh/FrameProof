@@ -18,6 +18,7 @@ export interface ParseContext {
   export_images: boolean;
   image_formats: ImageFormat[];
   image_scale: number;
+  compress: boolean;
 }
 
 /** Representation of a fetched Figma file. */
@@ -208,6 +209,42 @@ export interface AllTokens {
   shadows: ShadowToken[];
   images: ImageToken[];
   components: ComponentInfo[];
+}
+
+/** Outcome of a single image compression attempt. */
+export interface CompressionResult {
+  success: boolean;
+  original_size: number;
+  compressed_size: number;
+  savings_percent: number;
+  error?: string;
+}
+
+/** Aggregated statistics for a batch compression run. */
+export interface CompressionStats {
+  total_images: number;
+  compressed_count: number;
+  failed_count: number;
+  total_original_bytes: number;
+  total_compressed_bytes: number;
+  total_savings_percent: number;
+  monthly_compression_count?: number;
+}
+
+/** TinyJPG API JSON response body (internal). */
+export interface TinyJPGResponse {
+  input: {
+    size: number;
+    type: string;
+  };
+  output: {
+    size: number;
+    type: string;
+    width: number;
+    height: number;
+    ratio: number;
+    url: string;
+  };
 }
 
 /** Generation metadata manifest. */

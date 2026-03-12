@@ -9,6 +9,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import type { ImageExportOptions } from '../../api/client.js';
+import type { CompressionResult, CompressionStats } from '../../types/tokens.js';
+import { compressImageBuffer } from '../../api/tinyjpg.js';
 import { resolveParams } from '../utils/normalize-node-id.js';
 
 export const batchScreenshotsSchema = {
@@ -17,6 +19,7 @@ export const batchScreenshotsSchema = {
   scale: z.number().optional().default(1).describe('Export scale (1-4)'),
   output_dir: z.string().optional().default('.figma').describe('Directory to save screenshots'),
   include_hidden: z.boolean().optional().default(false).describe('Include hidden children'),
+  compress: z.boolean().optional().default(false).describe('Compress output via TinyJPG API (requires TINYJPG_TOKEN env var)'),
 };
 
 export interface BatchScreenshotsParams {
@@ -25,6 +28,7 @@ export interface BatchScreenshotsParams {
   scale?: number;
   output_dir?: string;
   include_hidden?: boolean;
+  compress?: boolean;
 }
 
 export interface ScreenshotEntry {
@@ -43,6 +47,8 @@ export interface BatchScreenshotsResult {
   total_children: number;
   screenshots: ScreenshotEntry[];
   failed: Array<{ node_id: string; name: string; error: string }>;
+  compression_stats?: CompressionStats;
+  warning?: string;
 }
 
 type FetchImagesFn = (
@@ -123,6 +129,14 @@ export async function handleBatchScreenshots(
 
   const screenshots: ScreenshotEntry[] = [];
   const failed: Array<{ node_id: string; name: string; error: string }> = [];
+  const compressionResults: CompressionResult[] = [];
+
+  // Check compression eligibility
+  const shouldCompress = params.compress && !!process.env.TINYJPG_TOKEN;
+  let batchWarning: string | undefined;
+  if (params.compress && !process.env.TINYJPG_TOKEN) {
+    batchWarning = 'compress requested but TINYJPG_TOKEN is not set — saving without compression';
+  }
 
   // Build download list (filter out missing URLs)
   const downloadList: Array<{ id: string; url: string; child: Record<string, unknown> }> = [];
@@ -143,23 +157,36 @@ export async function handleBatchScreenshots(
     const chunk = downloadList.slice(i, i + CONCURRENT);
     const results = await Promise.allSettled(
       chunk.map(async ({ id, url, child }) => {
-        const buffer = await downloadImageFn(url);
+        const rawBuffer = await downloadImageFn(url);
+        let fileBuffer: Uint8Array = new Uint8Array(rawBuffer);
+
+        // Compress if enabled (screenshots are always PNG)
+        let compressionResult: CompressionResult | undefined;
+        if (shouldCompress) {
+          const { compressed, result } = await compressImageBuffer(fileBuffer);
+          compressionResult = result;
+          fileBuffer = compressed;
+        }
+
         const childName = (child.name as string) ?? '';
         const safeName = childName.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
         const filePath = path.join(outputDir, `${safeName}_screenshot.png`);
-        fs.writeFileSync(filePath, Buffer.from(buffer));
+        fs.writeFileSync(filePath, fileBuffer);
 
         const bbox = child.absoluteBoundingBox as
           | { width: number; height: number }
           | undefined;
 
         return {
-          node_id: id,
-          name: childName,
-          node_type: (child.type as string) ?? 'UNKNOWN',
-          file_path: filePath,
-          width: Math.round(bbox?.width ?? 0),
-          height: Math.round(bbox?.height ?? 0),
+          entry: {
+            node_id: id,
+            name: childName,
+            node_type: (child.type as string) ?? 'UNKNOWN',
+            file_path: filePath,
+            width: Math.round(bbox?.width ?? 0),
+            height: Math.round(bbox?.height ?? 0),
+          },
+          compressionResult,
         };
       }),
     );
@@ -167,7 +194,10 @@ export async function handleBatchScreenshots(
     for (let j = 0; j < results.length; j++) {
       const result = results[j];
       if (result.status === 'fulfilled') {
-        screenshots.push(result.value);
+        screenshots.push(result.value.entry);
+        if (result.value.compressionResult) {
+          compressionResults.push(result.value.compressionResult);
+        }
       } else {
         const { id, child } = chunk[j];
         failed.push({
@@ -183,6 +213,27 @@ export async function handleBatchScreenshots(
     }
   }
 
+  // Build compression stats
+  let compressionStats: CompressionStats | undefined;
+  if (shouldCompress && compressionResults.length > 0) {
+    const compressedCount = compressionResults.filter((r) => r.success).length;
+    const failedCount = compressionResults.filter((r) => !r.success).length;
+    const totalOriginal = compressionResults.reduce((sum, r) => sum + r.original_size, 0);
+    const totalCompressed = compressionResults.reduce((sum, r) => sum + r.compressed_size, 0);
+    const totalSavingsPercent = totalOriginal > 0
+      ? Math.round(((totalOriginal - totalCompressed) / totalOriginal) * 1000) / 10
+      : 0;
+
+    compressionStats = {
+      total_images: compressionResults.length,
+      compressed_count: compressedCount,
+      failed_count: failedCount,
+      total_original_bytes: totalOriginal,
+      total_compressed_bytes: totalCompressed,
+      total_savings_percent: totalSavingsPercent,
+    };
+  }
+
   return {
     parent_node_id: nodeId,
     parent_name: (raw.name as string) ?? '',
@@ -190,5 +241,7 @@ export async function handleBatchScreenshots(
     total_children: childrenToScreenshot.length,
     screenshots,
     failed,
+    compression_stats: compressionStats,
+    warning: batchWarning,
   };
 }

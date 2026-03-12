@@ -8,6 +8,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import type { ImageExportOptions } from '../../api/client.js';
+import type { CompressionResult } from '../../types/tokens.js';
+import { isCompressibleFormat, compressImageBuffer } from '../../api/tinyjpg.js';
 import { resolveParams } from '../utils/normalize-node-id.js';
 
 export const exportNodeImageSchema = {
@@ -16,6 +18,7 @@ export const exportNodeImageSchema = {
   format: z.enum(['svg', 'png', 'jpg', 'pdf']).optional().default('png').describe('Image format'),
   scale: z.number().optional().default(1).describe('Scale for raster formats 1-4'),
   output_dir: z.string().optional().default('.figma').describe('Directory to save'),
+  compress: z.boolean().optional().default(false).describe('Compress output via TinyJPG API (requires TINYJPG_TOKEN env var)'),
 };
 
 export interface ExportNodeImageParams {
@@ -24,12 +27,15 @@ export interface ExportNodeImageParams {
   format?: 'svg' | 'png' | 'jpg' | 'pdf';
   scale?: number;
   output_dir?: string;
+  compress?: boolean;
 }
 
 export interface ExportNodeImageResult {
   file_path: string;
   format: string;
   size_bytes: number;
+  compression?: CompressionResult;
+  warning?: string;
 }
 
 type FetchImagesFn = (
@@ -86,7 +92,22 @@ export async function handleExportNodeImage(
   }
 
   // Download binary
-  const buffer = await downloadImageFn(imageUrl);
+  const rawBuffer = await downloadImageFn(imageUrl);
+  let fileBuffer: Uint8Array = new Uint8Array(rawBuffer);
+
+  let compression: CompressionResult | undefined;
+  let warning: string | undefined;
+
+  // Compress if requested and format is compressible
+  if (params.compress && isCompressibleFormat(format)) {
+    if (!process.env.TINYJPG_TOKEN) {
+      warning = 'compress requested but TINYJPG_TOKEN is not set — saving without compression';
+    } else {
+      const result = await compressImageBuffer(fileBuffer);
+      compression = result.result;
+      fileBuffer = result.compressed;
+    }
+  }
 
   // Write to disk
   if (!fs.existsSync(outputDir)) {
@@ -95,11 +116,13 @@ export async function handleExportNodeImage(
 
   const safeName = node.name.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
   const filePath = path.join(outputDir, `${safeName}.${format}`);
-  fs.writeFileSync(filePath, Buffer.from(buffer));
+  fs.writeFileSync(filePath, fileBuffer);
 
   return {
     file_path: filePath,
     format,
-    size_bytes: buffer.byteLength,
+    size_bytes: fileBuffer.length,
+    compression,
+    warning,
   };
 }

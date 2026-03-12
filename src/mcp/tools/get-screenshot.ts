@@ -8,6 +8,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import type { ImageExportOptions } from '../../api/client.js';
+import type { CompressionResult } from '../../types/tokens.js';
+import { compressImageBuffer } from '../../api/tinyjpg.js';
 import { mapNodeToDetail } from '../mappers/css-mapper.js';
 import { resolveParams } from '../utils/normalize-node-id.js';
 
@@ -16,6 +18,7 @@ export const getScreenshotSchema = {
   node_id: z.string().optional().describe('Node to screenshot (usually a frame). Auto-extracted from URL if not provided.'),
   scale: z.number().optional().default(1).describe('Export scale (1-4)'),
   output_dir: z.string().optional().default('.figma').describe('Directory to save'),
+  compress: z.boolean().optional().default(false).describe('Compress output via TinyJPG API (requires TINYJPG_TOKEN env var)'),
 };
 
 export interface GetScreenshotParams {
@@ -23,6 +26,7 @@ export interface GetScreenshotParams {
   node_id?: string;
   scale?: number;
   output_dir?: string;
+  compress?: boolean;
 }
 
 export interface ScreenshotSummary {
@@ -42,6 +46,8 @@ export interface GetScreenshotResult {
   height: number;
   file_size_bytes: number;
   summary: ScreenshotSummary;
+  compression?: CompressionResult;
+  warning?: string;
 }
 
 type FetchImagesFn = (
@@ -99,7 +105,22 @@ export async function handleGetScreenshot(
   }
 
   // Download binary
-  const buffer = await downloadImageFn(imageUrl);
+  const rawBuffer = await downloadImageFn(imageUrl);
+  let fileBuffer: Uint8Array = new Uint8Array(rawBuffer);
+
+  let compression: CompressionResult | undefined;
+  let warning: string | undefined;
+
+  // Screenshots are always PNG — compressible
+  if (params.compress) {
+    if (!process.env.TINYJPG_TOKEN) {
+      warning = 'compress requested but TINYJPG_TOKEN is not set — saving without compression';
+    } else {
+      const result = await compressImageBuffer(fileBuffer);
+      compression = result.result;
+      fileBuffer = result.compressed;
+    }
+  }
 
   // Write to disk
   if (!fs.existsSync(outputDir)) {
@@ -108,7 +129,7 @@ export async function handleGetScreenshot(
 
   const safeName = node.name.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
   const filePath = path.join(outputDir, `${safeName}_screenshot.png`);
-  fs.writeFileSync(filePath, Buffer.from(buffer));
+  fs.writeFileSync(filePath, fileBuffer);
 
   // Build structural summary from mapped detail
   const fileCtx = { styles: entry.file.styles, components: entry.file.components };
@@ -136,7 +157,9 @@ export async function handleGetScreenshot(
     file_path: filePath,
     width: detail.width,
     height: detail.height,
-    file_size_bytes: buffer.byteLength,
+    file_size_bytes: fileBuffer.length,
     summary,
+    compression,
+    warning,
   };
 }
