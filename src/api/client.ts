@@ -290,3 +290,220 @@ async function fetchWithRetry(
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// ─── Write API Methods ───────────────────────────────────
+
+import type {
+  PostVariablesRequestBody,
+  PostVariablesResponse,
+  GetLocalVariablesResponse,
+  DevResourceCreateRequest,
+  DevResourceUpdateRequest,
+  GetDevResourcesResponse,
+  PostCommentRequest,
+  GetCommentsResponse,
+  FigmaComment,
+} from '../types/write-api.js';
+
+/**
+ * Shared write-request helper with structured error handling.
+ * Handles 429 Retry-After, 403 (Enterprise/scopes), 404, 400.
+ */
+async function figmaWriteRequest(
+  url: string,
+  token: string,
+  method: string,
+  body?: unknown,
+): Promise<unknown> {
+  const headers: Record<string, string> = {
+    'X-Figma-Token': token,
+  };
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    });
+
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('Retry-After');
+      let waitSeconds = retryAfter ? parseInt(retryAfter, 10) : 5;
+
+      if (isNaN(waitSeconds) || waitSeconds > 120) {
+        throw new FigmaApiError(
+          `Rate limited by Figma API. Retry after ${retryAfter ?? 'unknown'}s.`,
+          429,
+          url,
+        );
+      }
+      if (attempt >= MAX_RETRIES) {
+        throw new FigmaApiError(
+          `Rate limited by Figma API after ${MAX_RETRIES} retries. Retry after ${waitSeconds}s.`,
+          429,
+          url,
+        );
+      }
+      waitSeconds = Math.min(waitSeconds, 30);
+      process.stderr.write(`Rate limited (429). Waiting ${waitSeconds}s...\n`);
+      await sleep(waitSeconds * 1000);
+      continue;
+    }
+
+    if (response.status === 403) {
+      const text = await response.text();
+      if (text.includes('enterprise') || text.includes('Enterprise')) {
+        throw new FigmaApiError(
+          'Variables API requires Figma Enterprise plan. This file\'s organization does not have Enterprise.',
+          403,
+          url,
+        );
+      }
+      throw new FigmaApiError(
+        `Token lacks required permission. Generate a new token with required scopes at figma.com/developers. Details: ${text}`,
+        403,
+        url,
+      );
+    }
+
+    if (response.status === 404) {
+      throw new FigmaApiError(
+        `Resource not found. Use get_variables / list_dev_resources to find valid IDs.`,
+        404,
+        url,
+      );
+    }
+
+    if (response.status === 400) {
+      const text = await response.text();
+      throw new FigmaApiError(
+        `Invalid request: ${text}`,
+        400,
+        url,
+      );
+    }
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new FigmaApiError(
+        `Figma API error: ${response.status} ${response.statusText}. ${text}`,
+        response.status,
+        url,
+      );
+    }
+
+    return response.json();
+  }
+
+  throw new Error('Unexpected: write request exhausted retries without error');
+}
+
+/**
+ * GET /v1/files/{file_key}/variables/local
+ * Retrieve all local variables and collections from a file.
+ * Requires Enterprise plan + file_variables:read scope.
+ */
+export async function getLocalVariables(
+  fileKey: string,
+  token: string,
+): Promise<GetLocalVariablesResponse> {
+  const url = `${FIGMA_API_BASE}/files/${encodeURIComponent(fileKey)}/variables/local`;
+  return figmaWriteRequest(url, token, 'GET') as Promise<GetLocalVariablesResponse>;
+}
+
+/**
+ * POST /v1/files/{file_key}/variables
+ * Create, update, or delete variables and collections in batch.
+ * Requires Enterprise plan + file_variables:write scope.
+ */
+export async function postVariables(
+  fileKey: string,
+  token: string,
+  body: PostVariablesRequestBody,
+): Promise<PostVariablesResponse> {
+  const url = `${FIGMA_API_BASE}/files/${encodeURIComponent(fileKey)}/variables`;
+  return figmaWriteRequest(url, token, 'POST', body) as Promise<PostVariablesResponse>;
+}
+
+/**
+ * GET /v1/files/{file_key}/dev_resources
+ * List dev resources for a file, optionally filtered by node_id.
+ */
+export async function getDevResources(
+  fileKey: string,
+  token: string,
+  nodeId?: string,
+): Promise<GetDevResourcesResponse> {
+  let url = `${FIGMA_API_BASE}/files/${encodeURIComponent(fileKey)}/dev_resources`;
+  if (nodeId) {
+    url += `?node_id=${encodeURIComponent(nodeId)}`;
+  }
+  return figmaWriteRequest(url, token, 'GET') as Promise<GetDevResourcesResponse>;
+}
+
+/**
+ * POST /v1/dev_resources
+ * Create dev resources (attach URLs to nodes).
+ */
+export async function postDevResources(
+  token: string,
+  resources: DevResourceCreateRequest[],
+): Promise<{ dev_resources: Array<{ id: string; name: string; url: string }> }> {
+  const url = `${FIGMA_API_BASE}/dev_resources`;
+  return figmaWriteRequest(url, token, 'POST', { dev_resources: resources }) as Promise<{
+    dev_resources: Array<{ id: string; name: string; url: string }>;
+  }>;
+}
+
+/**
+ * PUT /v1/dev_resources
+ * Update existing dev resources.
+ */
+export async function putDevResources(
+  token: string,
+  resources: DevResourceUpdateRequest[],
+): Promise<unknown> {
+  const url = `${FIGMA_API_BASE}/dev_resources`;
+  return figmaWriteRequest(url, token, 'PUT', { dev_resources: resources });
+}
+
+/**
+ * DELETE /v1/dev_resources/{id}
+ * Delete a single dev resource.
+ */
+export async function deleteDevResource(
+  token: string,
+  resourceId: string,
+): Promise<void> {
+  const url = `${FIGMA_API_BASE}/dev_resources/${encodeURIComponent(resourceId)}`;
+  await figmaWriteRequest(url, token, 'DELETE');
+}
+
+/**
+ * POST /v1/files/{file_key}/comments
+ * Post a new comment or reply to an existing comment.
+ */
+export async function postComment(
+  fileKey: string,
+  token: string,
+  body: PostCommentRequest,
+): Promise<FigmaComment> {
+  const url = `${FIGMA_API_BASE}/files/${encodeURIComponent(fileKey)}/comments`;
+  return figmaWriteRequest(url, token, 'POST', body) as Promise<FigmaComment>;
+}
+
+/**
+ * GET /v1/files/{file_key}/comments
+ * List all comments on a file.
+ */
+export async function getComments(
+  fileKey: string,
+  token: string,
+): Promise<GetCommentsResponse> {
+  const url = `${FIGMA_API_BASE}/files/${encodeURIComponent(fileKey)}/comments`;
+  return figmaWriteRequest(url, token, 'GET') as Promise<GetCommentsResponse>;
+}

@@ -27,6 +27,19 @@ import { getFrameOverviewSchema, handleGetFrameOverview } from './tools/get-fram
 import { batchScreenshotsSchema, handleBatchScreenshots } from './tools/batch-screenshots.js';
 import { exportPageAnalysisSchema, handleExportPageAnalysis } from './tools/export-page-analysis.js';
 import { fetchFigmaImages, downloadImage } from '../api/client.js';
+import { getVariablesSchema, handleGetVariables } from './tools/get-variables.js';
+import { createVariableCollectionSchema, handleCreateVariableCollection } from './tools/create-variable-collection.js';
+import { createVariableSchema, handleCreateVariable } from './tools/create-variable.js';
+import { updateVariableSchema, handleUpdateVariable } from './tools/update-variable.js';
+import { deleteVariableSchema, handleDeleteVariable } from './tools/delete-variable.js';
+import { syncVariablesSchema, handleSyncVariables } from './tools/sync-variables.js';
+import { listDevResourcesSchema, handleListDevResources } from './tools/list-dev-resources.js';
+import { createDevResourceSchema, handleCreateDevResource } from './tools/create-dev-resource.js';
+import { updateDevResourceSchema, handleUpdateDevResource } from './tools/update-dev-resource.js';
+import { deleteDevResourceSchema, handleDeleteDevResource } from './tools/delete-dev-resource.js';
+import { postCommentSchema, handlePostComment } from './tools/post-comment.js';
+import { replyToCommentSchema, handleReplyToComment } from './tools/reply-to-comment.js';
+import { getCommentsSchema, handleGetComments } from './tools/get-comments.js';
 import {
   LAYOUT_STRATEGY_NAME,
   LAYOUT_STRATEGY_DESCRIPTION,
@@ -386,6 +399,379 @@ server.tool(
   async (params) => {
     try {
       const result = await handleExportPageAnalysis(params, cache, fetchFigmaData);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ─── Variables API Tools (v0.3.0) ───────────────────────
+
+server.tool(
+  'get_variables',
+  'Retrieve all local variables and collections from a Figma file. Requires Enterprise plan + file_variables:read scope.',
+  getVariablesSchema,
+  async (params) => {
+    const token = getFigmaToken();
+    if (!token) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
+        isError: true,
+      };
+    }
+    try {
+      const result = await handleGetVariables(params, token);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'create_variable_collection',
+  'Create a new variable collection in a Figma file. Idempotent: returns existing collection if name already exists. Requires Enterprise plan + file_variables:write scope.',
+  createVariableCollectionSchema,
+  async (params) => {
+    const token = getFigmaToken();
+    if (!token) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
+        isError: true,
+      };
+    }
+    try {
+      const result = await handleCreateVariableCollection(params, token);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'create_variable',
+  'Create a new variable in a Figma file. Idempotent: returns existing if name+collection match. Hex colors auto-converted to RGBA. Requires Enterprise plan + file_variables:write scope.',
+  createVariableSchema,
+  async (params) => {
+    const token = getFigmaToken();
+    if (!token) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
+        isError: true,
+      };
+    }
+    try {
+      const result = await handleCreateVariable(
+        { ...params, resolved_type: params.resolved_type as 'COLOR' | 'FLOAT' | 'STRING' | 'BOOLEAN' },
+        token,
+      );
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'update_variable',
+  'Update an existing variable (name, mode values, scopes). Hex colors auto-converted to RGBA. Requires Enterprise plan + file_variables:write scope.',
+  updateVariableSchema,
+  async (params) => {
+    const token = getFigmaToken();
+    if (!token) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
+        isError: true,
+      };
+    }
+    try {
+      const result = await handleUpdateVariable(params, token);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'delete_variable',
+  'Delete a variable from a Figma file. Use dry_run=true to preview without making changes. Requires Enterprise plan + file_variables:write scope.',
+  deleteVariableSchema,
+  async (params) => {
+    const token = getFigmaToken();
+    if (!token) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
+        isError: true,
+      };
+    }
+    try {
+      const result = await handleDeleteVariable(params, token);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'sync_variables',
+  'Batch create/update/delete variables and collections in a single API call. Supports dry_run. Hex colors auto-converted. Requires Enterprise plan + file_variables:write scope.',
+  syncVariablesSchema,
+  async (params) => {
+    const token = getFigmaToken();
+    if (!token) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
+        isError: true,
+      };
+    }
+    try {
+      const result = await handleSyncVariables(params as Parameters<typeof handleSyncVariables>[0], token);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ─── Dev Resources API Tools ─────────────────────────────
+
+server.tool(
+  'list_dev_resources',
+  'List dev resources (linked URLs) for a Figma file, optionally filtered by node_id. Requires file_dev_resources:read scope.',
+  listDevResourcesSchema,
+  async (params) => {
+    const token = getFigmaToken();
+    if (!token) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
+        isError: true,
+      };
+    }
+    try {
+      const result = await handleListDevResources(params, token);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'create_dev_resource',
+  'Attach a URL (dev resource) to a Figma node. Idempotent: returns existing if same URL is already on the node. Max 10 per node. Requires file_dev_resources:write scope.',
+  createDevResourceSchema,
+  async (params) => {
+    const token = getFigmaToken();
+    if (!token) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
+        isError: true,
+      };
+    }
+    try {
+      const result = await handleCreateDevResource(params, token);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'update_dev_resource',
+  'Update an existing dev resource (rename or change URL). Requires file_dev_resources:write scope.',
+  updateDevResourceSchema,
+  async (params) => {
+    const token = getFigmaToken();
+    if (!token) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
+        isError: true,
+      };
+    }
+    try {
+      const result = await handleUpdateDevResource(params, token);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'delete_dev_resource',
+  'Delete a dev resource (unlink a URL from a Figma node). Requires file_dev_resources:write scope.',
+  deleteDevResourceSchema,
+  async (params) => {
+    const token = getFigmaToken();
+    if (!token) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
+        isError: true,
+      };
+    }
+    try {
+      const result = await handleDeleteDevResource(params, token);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ─── Comments API Tools ──────────────────────────────────
+
+server.tool(
+  'post_comment',
+  'Post a new top-level comment on a Figma file. Optionally anchor it to a node with x/y offset (FrameOffset format). Requires comments:write scope.',
+  postCommentSchema,
+  async (params) => {
+    const token = getFigmaToken();
+    if (!token) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
+        isError: true,
+      };
+    }
+    try {
+      const result = await handlePostComment(params, token);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'reply_to_comment',
+  'Post a reply to an existing comment thread in a Figma file. Requires comments:write scope.',
+  replyToCommentSchema,
+  async (params) => {
+    const token = getFigmaToken();
+    if (!token) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
+        isError: true,
+      };
+    }
+    try {
+      const result = await handleReplyToComment(params, token);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'get_comments',
+  'Retrieve all comments from a Figma file, grouped into threads with replies nested under parent comments. Requires comments:read scope.',
+  getCommentsSchema,
+  async (params) => {
+    const token = getFigmaToken();
+    if (!token) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
+        isError: true,
+      };
+    }
+    try {
+      const result = await handleGetComments(params, token);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };
