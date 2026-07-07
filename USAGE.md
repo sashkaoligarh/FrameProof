@@ -6,7 +6,7 @@
 
 | Параметр | Тип | Где используется | Описание |
 |----------|-----|-----------------|----------|
-| `file_id` | `string` | **все 13 инструментов** | ID файла Figma или полный URL. Из URL автоматически извлекается file_id и node_id |
+| `file_id` | `string` | Figma read/write и pixel-perfect инструменты | ID файла Figma или полный URL. Из URL автоматически извлекается file_id и node_id |
 | `node_id` | `string?` | `get_node_info`, `get_nodes_info`, `export_node_image`, `get_screenshot`, `get_frame_overview`, `batch_screenshots`, `export_page_analysis` | ID ноды. Автоматически извлекается из URL, если не указан явно. Формат: `8077:4170` или `8077-4170` |
 | `node_ids` | `string[]` | `get_nodes_info` | Массив ID нод для пакетного запроса |
 | `page` | `string?` | `get_design_tokens` | Фильтр по имени страницы |
@@ -42,6 +42,7 @@ get_screenshot                *       *       *       *                         
 get_frame_overview            *       *
 batch_screenshots             *       *       *       *                                 *
 export_page_analysis          *       *                                         *
+pixel_perfect_orchestrator    *       *
 ```
 
 ---
@@ -90,6 +91,19 @@ figma-scaler parse ABC123 --export-images --image-format jpg --compress
 # Фильтр по странице, включая скрытые слои
 figma-scaler parse ABC123 --page "Mobile" --include-hidden --format json
 ```
+
+### Strict visual gate
+
+```bash
+figma-scaler gate \
+  --page-url "http://localhost:3000/pricing" \
+  --selector ".pricing-hero" \
+  --figma-url "https://www.figma.com/design/FILE/Name?node-id=1-2" \
+  --real-flow \
+  --fail-on-review
+```
+
+`gate` сохраняет live/Figma screenshots, DOM-отчёты, diff PNG, `REPORT.md` и `summary.json` в `.pixel-perfect/figma-gate/`. Финальное закрытие pixel-perfect задач должно использовать `--real-flow --fail-on-review`.
 
 ### Коды выхода
 

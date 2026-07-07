@@ -45,6 +45,21 @@ export type { GradientHandlePositions, FigmaGradientStop } from './mcp/mappers/g
 export { deduplicateStyles, deduplicateStylesArray } from './mcp/utils/style-dedup.js';
 export { collapseSvgGroups } from './mcp/utils/svg-collapse.js';
 
+// Visual audit and pixel-perfect gate
+export { comparePngRmse, identifyPng } from './visual/image.js';
+export { captureLiveViewport, launchChromium, findChromeExecutable } from './visual/browser.js';
+export { exportFigmaReference, copyImageReference, createFigmaFetch } from './visual/figma-reference.js';
+export { runVisualGate } from './visual/gate.js';
+export type {
+  GateVerdict,
+  GateCheck,
+  GateReport,
+  GateViewportResult,
+  ViewportPreset,
+  ImageSize,
+} from './visual/types.js';
+export type { VisualGateOptions } from './visual/gate.js';
+
 // MCP types
 export type {
   CacheEntry,

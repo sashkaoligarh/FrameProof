@@ -1,7 +1,7 @@
 {
   "name": "figma-scaler",
   "version": "0.1.0",
-  "description": "Pixel-perfect Figma design token parser for AI-assisted development",
+  "description": "Pixel-perfect Figma token, orchestration, and visual gate toolkit for AI-assisted React/Astro development",
   "type": "module",
   "bin": {
     "figma-scaler": "./dist/cli.js",
@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
     "dev": "tsc --watch"
   },
   "keywords": [
@@ -29,12 +30,15 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "commander": "^14.0.3",
+    "playwright-core": "^1.59.1",
+    "pngjs": "^7.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@figma/rest-api-spec": "^0.36.0",
     "@types/css-tree": "^2.3.11",
     "@types/node": "^25.3.2",
+    "@types/pngjs": "^6.0.5",
     "css-tree": "^3.1.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"

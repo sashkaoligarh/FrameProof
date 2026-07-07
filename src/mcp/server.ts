@@ -26,6 +26,7 @@ import { getScreenshotSchema, handleGetScreenshot } from './tools/get-screenshot
 import { getFrameOverviewSchema, handleGetFrameOverview } from './tools/get-frame-overview.js';
 import { batchScreenshotsSchema, handleBatchScreenshots } from './tools/batch-screenshots.js';
 import { exportPageAnalysisSchema, handleExportPageAnalysis } from './tools/export-page-analysis.js';
+import { pixelPerfectOrchestratorSchema, handlePixelPerfectOrchestrator } from './tools/pixel-perfect-orchestrator.js';
 import { fetchFigmaImages, downloadImage } from '../api/client.js';
 import { getVariablesSchema, handleGetVariables } from './tools/get-variables.js';
 import { createVariableCollectionSchema, handleCreateVariableCollection } from './tools/create-variable-collection.js';
@@ -55,6 +56,16 @@ import {
   TOKEN_USAGE_RULES_DESCRIPTION,
   TOKEN_USAGE_RULES_MESSAGE,
 } from './prompts/token-usage-rules.js';
+import {
+  WRITE_DESIGN_STRATEGY_NAME,
+  WRITE_DESIGN_STRATEGY_DESCRIPTION,
+  WRITE_DESIGN_STRATEGY_MESSAGE,
+} from './prompts/write-design-strategy.js';
+import {
+  PIXEL_PERFECT_ORCHESTRATION_NAME,
+  PIXEL_PERFECT_ORCHESTRATION_DESCRIPTION,
+  PIXEL_PERFECT_ORCHESTRATION_MESSAGE,
+} from './prompts/pixel-perfect-orchestration.js';
 import { FIGMA_TOKENS_TEMPLATE, createTokensResourceHandlers } from './resources/figma-tokens.js';
 
 // ─── Configuration ──────────────────────────────────────
@@ -399,6 +410,27 @@ server.tool(
   async (params) => {
     try {
       const result = await handleExportPageAnalysis(params, cache, fetchFigmaData);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'pixel_perfect_orchestrator',
+  'Create a continuous-until-pass React/Astro pixel-perfect runbook with Figma section inventory, FSD/design-system rules, required artifacts, and strict figma-scaler gate commands.',
+  pixelPerfectOrchestratorSchema,
+  async (params) => {
+    try {
+      const result = await handlePixelPerfectOrchestrator(params, cache, fetchFigmaData);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };
@@ -798,6 +830,14 @@ server.prompt(READ_DESIGN_STRATEGY_NAME, READ_DESIGN_STRATEGY_DESCRIPTION, () =>
 
 server.prompt(TOKEN_USAGE_RULES_NAME, TOKEN_USAGE_RULES_DESCRIPTION, () => ({
   messages: [{ role: 'assistant' as const, content: { type: 'text' as const, text: TOKEN_USAGE_RULES_MESSAGE } }],
+}));
+
+server.prompt(WRITE_DESIGN_STRATEGY_NAME, WRITE_DESIGN_STRATEGY_DESCRIPTION, () => ({
+  messages: [{ role: 'assistant' as const, content: { type: 'text' as const, text: WRITE_DESIGN_STRATEGY_MESSAGE } }],
+}));
+
+server.prompt(PIXEL_PERFECT_ORCHESTRATION_NAME, PIXEL_PERFECT_ORCHESTRATION_DESCRIPTION, () => ({
+  messages: [{ role: 'assistant' as const, content: { type: 'text' as const, text: PIXEL_PERFECT_ORCHESTRATION_MESSAGE } }],
 }));
 
 // ─── Resources ──────────────────────────────────────────

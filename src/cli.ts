@@ -11,6 +11,8 @@ import { parseFileIdOrUrl, fetchAndParse } from './pipeline/fetch.js';
 import { parseDocumentTree } from './pipeline/parse.js';
 import { extractAllTokens } from './pipeline/transform.js';
 import { writeOutput } from './pipeline/output.js';
+import { runVisualGate } from './visual/gate.js';
+import { DEFAULT_VIEWPORTS, REAL_FLOW_VIEWPORTS, type ViewportPreset } from './visual/types.js';
 
 const program = new Command();
 
@@ -150,4 +152,104 @@ program
     }
   });
 
+program
+  .command('gate')
+  .description('Strict visual gate: compare a live React/Astro selector against Figma/reference screenshots')
+  .option('--page-url <url>', 'Absolute live page URL')
+  .option('--route <route>', 'Route relative to --base-url')
+  .option('--base-url <url>', 'Base URL for --route', 'http://localhost:3000')
+  .requiredOption('--selector <selector>', 'CSS selector for the live block to compare')
+  .option('--figma-url <url>', 'Figma node URL used for all viewports')
+  .option('--figma-url-desktop <url>', 'Desktop-specific Figma node URL')
+  .option('--figma-url-tablet <url>', 'Tablet-specific Figma node URL')
+  .option('--figma-url-mobile <url>', 'Mobile-specific Figma node URL')
+  .option('--figma-image <path>', 'Reference image used for all viewports')
+  .option('--figma-image-desktop <path>', 'Desktop-specific reference image')
+  .option('--figma-image-tablet <path>', 'Tablet-specific reference image')
+  .option('--figma-image-mobile <path>', 'Mobile-specific reference image')
+  .option('--viewports <list>', 'Viewport names: desktop,tablet,mobile,ultrawide')
+  .option('--output-dir <dir>', 'Output artifact directory', '.pixel-perfect/figma-gate')
+  .option('--name <name>', 'Stable run name')
+  .option('--rmse-threshold <number>', 'Normalized RMSE pass threshold', '0.025')
+  .option('--size-tolerance <number>', 'Allowed image size delta in px', '2')
+  .option('--wait-ms <number>', 'Extra wait after page load', '500')
+  .option('--real-flow', 'Use strict desktop/tablet/mobile/ultrawide viewports plus semantic DOM checks', false)
+  .option('--soft-size-mismatch', 'Size mismatch becomes REVIEW instead of FAIL', false)
+  .option('--fail-on-review', 'Exit non-zero for REVIEW as well as FAIL', false)
+  .action(async (opts: Record<string, unknown>) => {
+    const pageUrl = resolvePageUrl(opts);
+    const selector = opts.selector as string;
+    const figmaUrls = compactRecord({
+      desktop: opts.figmaUrlDesktop as string | undefined,
+      tablet: opts.figmaUrlTablet as string | undefined,
+      mobile: opts.figmaUrlMobile as string | undefined,
+    });
+    const figmaImages = compactRecord({
+      desktop: opts.figmaImageDesktop as string | undefined,
+      tablet: opts.figmaImageTablet as string | undefined,
+      mobile: opts.figmaImageMobile as string | undefined,
+    });
+
+    if (!opts.figmaUrl && Object.keys(figmaUrls).length === 0 && !opts.figmaImage && Object.keys(figmaImages).length === 0) {
+      process.stderr.write('Error: provide --figma-url, per-viewport --figma-url-*, --figma-image, or per-viewport --figma-image-*.\n');
+      process.exit(1);
+    }
+
+    try {
+      const report = await runVisualGate({
+        pageUrl,
+        selector,
+        outputDir: opts.outputDir as string,
+        name: opts.name as string | undefined,
+        viewports: parseViewportList(opts.viewports as string | undefined, opts.realFlow as boolean),
+        figmaUrl: opts.figmaUrl as string | undefined,
+        figmaUrls,
+        figmaImage: opts.figmaImage as string | undefined,
+        figmaImages,
+        threshold: Number(opts.rmseThreshold ?? '0.025'),
+        sizeTolerance: Number(opts.sizeTolerance ?? '2'),
+        strictSize: !(opts.softSizeMismatch as boolean),
+        failOnReview: opts.failOnReview as boolean,
+        waitMs: Number(opts.waitMs ?? '500'),
+        realFlow: opts.realFlow as boolean,
+      });
+
+      console.log(`Verdict: ${report.verdict}`);
+      console.log(`Report: ${report.reportPath}`);
+      console.log(`Summary: ${report.jsonPath}`);
+
+      if (report.verdict === 'FAIL' || (report.verdict === 'REVIEW' && opts.failOnReview)) {
+        process.exit(1);
+      }
+    } catch (error) {
+      process.stderr.write(`Error: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exit(1);
+    }
+  });
+
 program.parse();
+
+function resolvePageUrl(opts: Record<string, unknown>): string {
+  if (opts.pageUrl) return opts.pageUrl as string;
+  const route = (opts.route as string | undefined) ?? '/';
+  const baseUrl = (opts.baseUrl as string | undefined) ?? 'http://localhost:3000';
+  return new URL(route, baseUrl).toString();
+}
+
+function parseViewportList(value: string | undefined, realFlow: boolean): ViewportPreset[] | undefined {
+  if (!value) return realFlow ? REAL_FLOW_VIEWPORTS : undefined;
+  const presets = new Map([...DEFAULT_VIEWPORTS, ...REAL_FLOW_VIEWPORTS].map((viewport) => [viewport.name, viewport]));
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((name) => {
+      const preset = presets.get(name);
+      if (!preset) throw new Error(`Unknown viewport "${name}". Use desktop, tablet, mobile, ultrawide.`);
+      return preset;
+    });
+}
+
+function compactRecord(record: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value)) as Record<string, string>;
+}
