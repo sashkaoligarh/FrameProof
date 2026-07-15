@@ -7,8 +7,11 @@
  * - Empty node_ids array returns empty result
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleGetNodesInfo } from '../../../src/mcp/tools/get-nodes-info.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { getNodesInfoSchema, handleGetNodesInfo } from '../../../src/mcp/tools/get-nodes-info.js';
 import { TokenCache } from '../../../src/mcp/cache.js';
 import type { CacheEntry } from '../../../src/types/mcp.js';
 import type { FigmaFile, AllTokens, ParsedNode } from '../../../src/types/tokens.js';
@@ -18,14 +21,14 @@ import type { Node } from '@figma/rest-api-spec';
 // Fixtures
 // ---------------------------------------------------------------------------
 
-function makeRawNode(id: string, name: string): Node {
+function makeRawNode(id: string, name: string, children: Node[] = []): Node {
   return {
     id,
     name,
     type: 'FRAME',
     visible: true,
     absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 50 },
-    children: [],
+    children,
   } as unknown as Node;
 }
 
@@ -76,10 +79,17 @@ function makeCacheEntry(fileId: string, nodeList: { id: string; name: string }[]
 describe('handleGetNodesInfo', () => {
   let cache: TokenCache;
   let mockFetchFn: ReturnType<typeof vi.fn>;
+  let outputRoot: string | undefined;
 
   beforeEach(() => {
     cache = new TokenCache();
     mockFetchFn = vi.fn();
+  });
+
+  afterEach(() => {
+    delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
+    if (outputRoot) fs.rmSync(outputRoot, { recursive: true, force: true });
+    outputRoot = undefined;
   });
 
   it('returns NodeDetail[] for batch of 2+ node IDs', async () => {
@@ -104,19 +114,25 @@ describe('handleGetNodesInfo', () => {
     expect(result.total_returned).toBe(2);
   });
 
-  it('throws error when an invalid node is in the batch', async () => {
+  it('returns valid nodes and per-node errors when an invalid node is in the batch', async () => {
     const entry = makeCacheEntry('file-1', [
       { id: '10:1', name: 'Frame A' },
     ]);
     mockFetchFn.mockResolvedValue({ file: entry.file, nodes: entry.nodes, tokens: entry.tokens });
 
-    await expect(
-      handleGetNodesInfo(
-        { file_id: 'file-1', node_ids: ['10:1', 'nonexistent'] },
-        cache,
-        mockFetchFn,
-      ),
-    ).rejects.toThrow(/not found/i);
+    const result = await handleGetNodesInfo(
+      { file_id: 'file-1', node_ids: ['10:1', 'nonexistent'] },
+      cache,
+      mockFetchFn,
+    );
+
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0].node_id).toBe('10:1');
+    expect(result.total_requested).toBe(2);
+    expect(result.total_returned).toBe(1);
+    expect(result.errors).toEqual([
+      { node_id: 'nonexistent', error: expect.stringMatching(/not found.*get_document_structure/i) },
+    ]);
   });
 
   it('returns empty result for empty node_ids', async () => {
@@ -132,5 +148,61 @@ describe('handleGetNodesInfo', () => {
     expect(result.nodes).toEqual([]);
     expect(result.total_requested).toBe(0);
     expect(result.total_returned).toBe(0);
+  });
+
+  it('saves every successful full tree before trimming and reports lookup errors', async () => {
+    const grandchild = makeRawNode('10:3', 'Grandchild');
+    const child = makeRawNode('10:2', 'Child', [grandchild]);
+    const parent = makeRawNode('10:1', 'Parent', [child]);
+    const entry = makeCacheEntry('file-1', []);
+    entry.nodes = [
+      { node_id: '10:1', node_type: 'FRAME', name: 'Parent', parent_id: null, depth: 0, raw: parent },
+      { node_id: '10:2', node_type: 'FRAME', name: 'Child', parent_id: '10:1', depth: 1, raw: child },
+      { node_id: '10:3', node_type: 'FRAME', name: 'Grandchild', parent_id: '10:2', depth: 2, raw: grandchild },
+    ];
+    mockFetchFn.mockResolvedValue({ file: entry.file, nodes: entry.nodes, tokens: entry.tokens });
+    outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-nodes-info-'));
+    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputRoot;
+
+    const savedResult = await handleGetNodesInfo(
+      {
+        file_id: 'file-1',
+        node_ids: ['10:1', '99:99'],
+        depth: 2,
+        max_response_chars: 1,
+        save_to: 'nodes.json',
+      },
+      cache,
+      mockFetchFn,
+    );
+    const saved = JSON.parse(fs.readFileSync(savedResult.saved_to, 'utf8'));
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0].children[0].children[0].node_id).toBe('10:3');
+    expect(savedResult.total_returned).toBe(1);
+    expect(savedResult.summaries[0].children_count).toBe(2);
+    expect(savedResult.errors).toHaveLength(1);
+    expect(savedResult).not.toHaveProperty('_truncated');
+
+    const responseResult = await handleGetNodesInfo(
+      { file_id: 'file-1', node_ids: ['10:1'], depth: 2, max_response_chars: 1 },
+      cache,
+      mockFetchFn,
+    );
+    expect(responseResult).toMatchObject({ _truncated: true });
+    expect(responseResult.nodes).toEqual([]);
+    expect(responseResult.total_returned).toBe(0);
+  });
+
+  it('bounds depth, max_response_chars, and batch length', () => {
+    expect(getNodesInfoSchema.depth.safeParse(-1).success).toBe(false);
+    expect(getNodesInfoSchema.depth.safeParse(1.5).success).toBe(false);
+    expect(getNodesInfoSchema.depth.safeParse(Infinity).success).toBe(false);
+    expect(getNodesInfoSchema.depth.safeParse(21).success).toBe(false);
+    expect(getNodesInfoSchema.max_response_chars.safeParse(0).success).toBe(false);
+    expect(getNodesInfoSchema.max_response_chars.safeParse(10.5).success).toBe(false);
+    expect(getNodesInfoSchema.max_response_chars.safeParse(Infinity).success).toBe(false);
+    expect(getNodesInfoSchema.max_response_chars.safeParse(1_000_001).success).toBe(false);
+    expect(getNodesInfoSchema.node_ids.safeParse(Array.from({ length: 101 }, (_, i) => String(i))).success).toBe(false);
   });
 });

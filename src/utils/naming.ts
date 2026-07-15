@@ -28,20 +28,18 @@ interface FigmaRGBA {
  * (e.g. "HTMLParser" -> ["html", "parser"]).
  */
 function splitWords(str: string): string[] {
-  // 1. Replace common delimiters with a single space.
-  let normalized = str
-    .replace(/[/_\-.]+/g, ' ');
-
-  // 2. Insert a space before a capital that follows a lowercase or digit,
+  // 1. Insert a space before a capital that follows a lowercase or digit,
   //    or before a capital followed by a lowercase (to split "HTMLParser"
   //    into "HTML Parser" first).
-  normalized = normalized
+  const normalized = str
     // aB -> a B  (camelCase boundary)
     .replace(/([a-z\d])([A-Z])/g, '$1 $2')
     // ABc -> A Bc (consecutive caps followed by lowercase, e.g. HTMLParser -> HTML Parser)
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    // CSS identifiers are emitted as ASCII; all punctuation and controls are delimiters.
+    .replace(/[^A-Za-z0-9]+/g, ' ');
 
-  // 3. Split on whitespace, lowercase everything, drop empties.
+  // 2. Split on whitespace, lowercase everything, drop empties.
   return normalized
     .trim()
     .split(/\s+/)
@@ -144,6 +142,11 @@ export function autoNameColor(rgba: FigmaRGBA): string {
  */
 export function sanitizeStyleName(name: string): string {
   return toKebabCase(name.replace(/\//g, '-'));
+}
+
+/** Convert arbitrary Figma text into a non-empty ASCII CSS identifier segment. */
+export function sanitizeCssIdentifier(name: string, fallback = 'token'): string {
+  return toKebabCase(name) || fallback;
 }
 
 /**

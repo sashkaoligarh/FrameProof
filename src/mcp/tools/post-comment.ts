@@ -37,7 +37,7 @@ export async function handlePostComment(
   const { file_id: fileKey } = resolveParams(params.file_id);
 
   process.stderr.write(
-    `[write] POST comment: "${params.message}" on node ${params.node_id ?? 'none'} in file ${fileKey}\n`,
+    `[write] POST comment on node ${params.node_id ?? 'none'} in file ${fileKey}\n`,
   );
 
   const body: PostCommentRequest = {

@@ -40,7 +40,7 @@ ALWAYS use \`dry_run: true\` first for:
 Show the user the preview, then confirm before executing with \`dry_run: false\`.
 
 ### Step 5: Idempotency
-Create tools are idempotent — calling create_variable_collection with an existing name returns the existing collection. Safe to retry.
+Create tools check for existing values before writing, but the check and create are separate API calls. Do not retry an ambiguous write automatically; refetch first because concurrent calls can create duplicates.
 
 ### Example: Create a design system
 \`\`\`
@@ -78,7 +78,7 @@ Attach code references to design nodes so developers see them in Figma Dev Mode.
      name: "Button.tsx", url: "https://github.com/.../Button.tsx" }
 \`\`\`
 
-Idempotent by URL — won't create duplicates if the same URL is already attached.
+The tool checks for the URL before creating, but concurrent calls can race. Refetch after ambiguous failures instead of retrying blindly.
 
 ## Comments Workflow
 

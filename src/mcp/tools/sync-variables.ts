@@ -110,7 +110,7 @@ export const syncVariablesSchema = {
   variable_mode_values: z.array(variableModeValueSchema).optional().describe(
     'Mode value assignments. COLOR values can be hex strings or RGBA objects.',
   ),
-  dry_run: z.boolean().optional().default(false).describe(
+  dry_run: z.boolean().optional().default(true).describe(
     'If true, returns preview summary without making API calls',
   ),
 };
@@ -176,7 +176,7 @@ export async function handleSyncVariables(
 
   const summary = buildSummary(params);
 
-  if (params.dry_run) {
+  if (params.dry_run ?? true) {
     return {
       status: 'dry_run',
       summary,

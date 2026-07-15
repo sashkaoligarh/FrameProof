@@ -1,10 +1,13 @@
 export type GateVerdict = 'PASS' | 'REVIEW' | 'FAIL';
+export type GateCheckVerdict = GateVerdict | 'SKIP';
+export type ComparisonMode = 'exact-frame' | 'responsive-flow';
 
 export interface ViewportPreset {
   name: string;
   referenceName?: string;
   width: number;
   height: number;
+  comparisonMode?: ComparisonMode;
   preserveWidth?: boolean;
 }
 
@@ -15,10 +18,23 @@ export interface ImageSize {
 
 export interface GateCheck {
   check: string;
-  verdict: GateVerdict;
+  verdict: GateCheckVerdict;
   notes: string;
   figmaSource?: string;
   liveSource?: string;
+}
+
+export interface GateCaptureDiagnostics {
+  status: number | null;
+  ok: boolean;
+  fullPath?: string;
+  consoleMessages: Array<{
+    type: string;
+    text: string;
+    location?: { url: string; lineNumber: number; columnNumber: number };
+  }>;
+  failedRequests: Array<{ method: string; url: string; failure: string }>;
+  pageErrors: string[];
 }
 
 export interface GateViewportResult {
@@ -28,6 +44,7 @@ export interface GateViewportResult {
   referencePath?: string;
   livePath?: string;
   domPath?: string;
+  diagnostics: GateCaptureDiagnostics;
 }
 
 export interface GateReport {
@@ -49,13 +66,13 @@ export const DEFAULT_VIEWPORTS: ViewportPreset[] = [
 ];
 
 export const REAL_FLOW_VIEWPORTS: ViewportPreset[] = [
-  { name: 'desktop', width: 1920, height: 900 },
+  { name: 'desktop', width: 1440, height: 900 },
   { name: 'tablet', width: 1024, height: 1366 },
   { name: 'mobile', width: 375, height: 844 },
-  { name: 'ultrawide', referenceName: 'desktop', width: 2412, height: 1000, preserveWidth: true },
+  { name: 'ultrawide', referenceName: 'desktop', width: 2412, height: 1000, comparisonMode: 'responsive-flow' },
 ];
 
-export function worstVerdict(verdicts: GateVerdict[]): GateVerdict {
+export function worstVerdict(verdicts: GateCheckVerdict[]): GateVerdict {
   if (verdicts.includes('FAIL')) return 'FAIL';
   if (verdicts.includes('REVIEW')) return 'REVIEW';
   return 'PASS';

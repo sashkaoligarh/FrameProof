@@ -8,6 +8,7 @@ import {
   toSnakeCase,
   autoNameColor,
   sanitizeStyleName,
+  sanitizeCssIdentifier,
   sanitizeNodeId,
 } from '../../../src/utils/naming.js';
 
@@ -140,6 +141,19 @@ describe('sanitizeStyleName', () => {
 
   it('returns empty string for empty input', () => {
     expect(sanitizeStyleName('')).toBe('');
+  });
+});
+
+describe('sanitizeCssIdentifier', () => {
+  it('removes quotes, slashes, punctuation, and control characters', () => {
+    expect(sanitizeCssIdentifier('Brand/Primary"\'\n\u0007Alert')).toBe(
+      'brand-primary-alert',
+    );
+  });
+
+  it('uses a safe fallback when the name has no identifier characters', () => {
+    expect(sanitizeCssIdentifier('"\'\n\u0000')).toBe('token');
+    expect(sanitizeCssIdentifier('"\'\n', 'unnamed')).toBe('unnamed');
   });
 });
 

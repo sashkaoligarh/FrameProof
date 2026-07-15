@@ -4,7 +4,8 @@
  * Coverage:
  * - Success deletion: sends DELETE action, returns { deleted: true, variable_id }
  * - dry_run=true: returns preview without calling postVariables
- * - dry_run=false (default): calls postVariables
+ * - dry_run=false: calls postVariables
+ * - omitted dry_run defaults to a preview
  * - 404 not found error
  */
 
@@ -44,7 +45,7 @@ describe('handleDeleteVariable', () => {
       mockPostVariables.mockResolvedValue(MOCK_POST_VARIABLES_RESPONSE);
 
       const result = await handleDeleteVariable(
-        { file_id: MOCK_FILE_KEY, variable_id: MOCK_VARIABLE.id },
+        { file_id: MOCK_FILE_KEY, variable_id: MOCK_VARIABLE.id, dry_run: false },
         MOCK_TOKEN,
       );
 
@@ -56,7 +57,7 @@ describe('handleDeleteVariable', () => {
       mockPostVariables.mockResolvedValue(MOCK_POST_VARIABLES_RESPONSE);
 
       await handleDeleteVariable(
-        { file_id: MOCK_FILE_KEY, variable_id: MOCK_VARIABLE.id },
+        { file_id: MOCK_FILE_KEY, variable_id: MOCK_VARIABLE.id, dry_run: false },
         MOCK_TOKEN,
       );
 
@@ -74,7 +75,7 @@ describe('handleDeleteVariable', () => {
       mockPostVariables.mockResolvedValue(MOCK_POST_VARIABLES_RESPONSE);
 
       await handleDeleteVariable(
-        { file_id: MOCK_FILE_KEY, variable_id: MOCK_VARIABLE.id },
+        { file_id: MOCK_FILE_KEY, variable_id: MOCK_VARIABLE.id, dry_run: false },
         MOCK_TOKEN,
       );
 
@@ -86,7 +87,7 @@ describe('handleDeleteVariable', () => {
 
       const figmaUrl = `https://www.figma.com/design/${MOCK_FILE_KEY}/My-File`;
       await handleDeleteVariable(
-        { file_id: figmaUrl, variable_id: MOCK_VARIABLE.id },
+        { file_id: figmaUrl, variable_id: MOCK_VARIABLE.id, dry_run: false },
         MOCK_TOKEN,
       );
 
@@ -130,7 +131,7 @@ describe('handleDeleteVariable', () => {
       expect(result.would_delete.resolved_type).toBe(MOCK_VARIABLE.resolvedType);
     });
 
-    it('dry_run=false (default) calls postVariables', async () => {
+    it('dry_run=false calls postVariables', async () => {
       mockPostVariables.mockResolvedValue(MOCK_POST_VARIABLES_RESPONSE);
 
       await handleDeleteVariable(
@@ -145,15 +146,16 @@ describe('handleDeleteVariable', () => {
       expect(mockPostVariables).toHaveBeenCalledOnce();
     });
 
-    it('omitting dry_run defaults to calling postVariables', async () => {
-      mockPostVariables.mockResolvedValue(MOCK_POST_VARIABLES_RESPONSE);
+    it('omitting dry_run defaults to a preview', async () => {
+      mockGetLocalVariables.mockResolvedValue(MOCK_GET_VARIABLES_RESPONSE);
 
-      await handleDeleteVariable(
+      const result = await handleDeleteVariable(
         { file_id: MOCK_FILE_KEY, variable_id: MOCK_VARIABLE.id },
         MOCK_TOKEN,
       );
 
-      expect(mockPostVariables).toHaveBeenCalledOnce();
+      expect(mockPostVariables).not.toHaveBeenCalled();
+      expect(result.dry_run).toBe(true);
     });
   });
 
@@ -165,7 +167,7 @@ describe('handleDeleteVariable', () => {
 
       await expect(
         handleDeleteVariable(
-          { file_id: MOCK_FILE_KEY, variable_id: 'VariableID:NONEXISTENT:0' },
+          { file_id: MOCK_FILE_KEY, variable_id: 'VariableID:NONEXISTENT:0', dry_run: false },
           MOCK_TOKEN,
         ),
       ).rejects.toMatchObject({ status: 404 });
@@ -178,7 +180,7 @@ describe('handleDeleteVariable', () => {
 
       await expect(
         handleDeleteVariable(
-          { file_id: MOCK_FILE_KEY, variable_id: 'bad-id' },
+          { file_id: MOCK_FILE_KEY, variable_id: 'bad-id', dry_run: false },
           MOCK_TOKEN,
         ),
       ).rejects.toThrow(FigmaApiError);

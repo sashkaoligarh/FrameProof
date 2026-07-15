@@ -1,7 +1,7 @@
 /**
  * MCP Tool: create_dev_resource
  * Create a dev resource (attach a URL to a Figma node).
- * Idempotent: returns existing resource if the same URL is already linked to the node.
+ * Returns an existing resource when the same URL is observed on the node before creation.
  * Validates max 10 dev resources per node.
  */
 
@@ -44,7 +44,7 @@ export async function handleCreateDevResource(
   // Idempotency: if same URL already exists on this node, return it
   const duplicate = existingResources.find((r) => r.url === params.url);
   if (duplicate) {
-    process.stderr.write(`[write] Dev resource with URL "${params.url}" already exists on node, returning existing.\n`);
+    process.stderr.write('[write] Dev resource URL already exists on node, returning existing.\n');
     return {
       resource_id: duplicate.id,
       name: duplicate.name,
@@ -70,13 +70,17 @@ export async function handleCreateDevResource(
     },
   ]);
 
-  const created = response.dev_resources[0];
+  const created = response.links_created[0];
+  if (!created) {
+    const details = response.errors?.map((error) => error.error).join('; ');
+    throw new Error(`Figma did not create the dev resource${details ? `: ${details}` : '.'}`);
+  }
 
   return {
     resource_id: created.id,
     name: created.name,
     url: created.url,
-    node_id: resolvedNodeId ?? params.node_id,
+    node_id: created.node_id,
     created: true,
   };
 }

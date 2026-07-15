@@ -225,6 +225,37 @@ describe('extractTypography — deduplication', () => {
     expect(result).toHaveLength(1);
     expect(result[0].usage_count).toBe(2);
   });
+
+  it('keeps styles with different emitted properties separate', () => {
+    const baseStyle = {
+      fontFamily: 'Inter',
+      fontSize: 14,
+      fontWeight: 400,
+      fontPostScriptName: 'Inter-Regular',
+      lineHeightPx: 20,
+      lineHeightUnit: 'PIXELS',
+      textCase: 'ORIGINAL',
+      textDecoration: 'NONE',
+      textAlignHorizontal: 'LEFT',
+    };
+    const mockNodes: ParsedNode[] = [0, 1].map((letterSpacing) => ({
+      node_id: `distinct:${letterSpacing}`,
+      node_type: 'TEXT',
+      name: 'Text',
+      parent_id: null,
+      depth: 0,
+      raw: {
+        type: 'TEXT',
+        characters: 'Text',
+        style: { ...baseStyle, letterSpacing },
+      } as unknown as Node,
+    }));
+
+    const result = extractTypography(mockNodes);
+
+    expect(result).toHaveLength(2);
+    expect(result.map((token) => token.letter_spacing).sort()).toEqual([0, 1]);
+  });
 });
 
 describe('extractTypography — precision (SC-002)', () => {

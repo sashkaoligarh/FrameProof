@@ -567,6 +567,58 @@ describe('generateCSS — valid CSS (css-tree validation)', () => {
   });
 });
 
+describe('generateCSS — untrusted names and collisions', () => {
+  it('sanitizes every identifier and disambiguates sanitized collisions', () => {
+    const tokens: AllTokens = {
+      ...emptyTokens,
+      colors: [
+        { ...fullTokens.colors[0], name: 'Brand/Primary' },
+        { ...fullTokens.colors[1], name: 'Brand Primary' },
+      ],
+      shadows: [
+        { ...fullTokens.shadows[0], name: 'color/brand primary' },
+      ],
+      radii: [
+        { value: 8, is_per_corner: false, usage_count: 1 },
+        { value: 8, is_per_corner: true, usage_count: 1 },
+      ],
+    };
+
+    const css = generateCSS(tokens);
+    const names = [...css.matchAll(/--([a-z0-9-]+)\s*:/g)].map((match) => match[1]);
+
+    expect(names).toContain('color-brand-primary');
+    expect(names).toContain('color-brand-primary-2');
+    expect(names).toContain('color-brand-primary-3');
+    expect(names).toContain('radius-8-uniform');
+    expect(names).toContain('radius-8-per-corner');
+    expect(new Set(names).size).toBe(names.length);
+    expect(() => parse(css)).not.toThrow();
+  });
+
+  it('removes malicious identifier characters and quotes CSS string values', () => {
+    const family = 'Bad "Font\'\n\\Name\u0007';
+    const tokens: AllTokens = {
+      ...emptyTokens,
+      colors: [{
+        ...fullTokens.colors[0],
+        name: 'primary"; }\nbody { color: red; /*',
+      }],
+      typography: [{ ...fullTokens.typography[0], font_family: family }],
+    };
+
+    const css = generateCSS(tokens);
+
+    expect(css).toContain('--color-primary-body-color-red: #2563eb;');
+    expect(css).toContain('--font-family-bad-font-name:');
+    expect(css).toContain('\\"Font\'');
+    expect(css).toContain('\\a ');
+    expect(css).toContain('\\7 ');
+    expect(css).not.toContain('\nbody { color: red');
+    expect(() => parse(css)).not.toThrow();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Tests — output ends with newline
 // ---------------------------------------------------------------------------

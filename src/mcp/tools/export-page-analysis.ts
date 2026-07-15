@@ -6,8 +6,6 @@
  */
 
 import { z } from 'zod';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type { Node } from '@figma/rest-api-spec';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import type { NodeDetail } from '../../types/mcp.js';
@@ -16,6 +14,7 @@ import { mapNodeToDetail } from '../mappers/css-mapper.js';
 import { collapseSvgGroups } from '../utils/svg-collapse.js';
 import { buildNodeSummary } from '../utils/node-summary.js';
 import { resolveParams } from '../utils/normalize-node-id.js';
+import { atomicWriteOutputFile } from '../utils/output-path.js';
 
 export const exportPageAnalysisSchema = {
   file_id: z.string().describe('Figma file ID or full Figma URL (e.g. https://www.figma.com/design/FILE_ID/...)'),
@@ -123,11 +122,6 @@ export async function handleExportPageAnalysis(
   const format = params.format ?? 'markdown';
   const outputPath = params.output_path ?? '.figma/page-analysis.md';
 
-  const dir = path.dirname(outputPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
   let content: string;
   const lineMap: Array<{ node_id: string; name: string; line_start: number }> = [];
 
@@ -141,10 +135,10 @@ export async function handleExportPageAnalysis(
     });
   }
 
-  fs.writeFileSync(outputPath, content, 'utf-8');
+  const savedOutputPath = atomicWriteOutputFile(outputPath, content);
 
   return {
-    output_path: outputPath,
+    output_path: savedOutputPath,
     file_size_bytes: Buffer.byteLength(content, 'utf-8'),
     format,
     sections_count: sections.length,
@@ -277,7 +271,7 @@ function walkForNotes(node: NodeDetail, sectionName: string, notes: string[]): v
     if (fill.fill_type === 'solid' && fill.value_hex && !fill.css_variable) {
       notes.push(
         `ORPHAN_COLOR: "${node.name}" in "${sectionName}" uses color ${fill.value_hex} ` +
-          `which doesn't match any design token. Add to design system or use nearest token.`,
+          `which doesn't match any observed value. Preserve it unless an authoritative variable or verified project token should replace it.`,
       );
     }
   }

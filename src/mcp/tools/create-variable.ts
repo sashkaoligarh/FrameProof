@@ -1,7 +1,7 @@
 /**
  * MCP Tool: create_variable
  * Create a new variable in a Figma file.
- * Idempotent: returns existing variable info if variable with same name in same collection exists.
+ * Returns existing variable info when the same name and collection are observed before creation.
  * Supports hex color auto-conversion for COLOR type variables.
  * Requires Enterprise plan + file_variables:write scope.
  */
@@ -63,7 +63,8 @@ export async function handleCreateVariable(
     }
   }
 
-  const variableTempId = `temp_var_${Date.now()}`;
+  // Temporary IDs are request-local in Figma's variables endpoint.
+  const variableTempId = 'temp_var_1';
 
   // Build variable change
   const variableChange: {
@@ -131,7 +132,10 @@ export async function handleCreateVariable(
 
   // Get the real ID from tempIdToRealId mapping
   const tempIdToRealId = response.meta?.tempIdToRealId ?? {};
-  const realVariableId = tempIdToRealId[variableTempId] ?? variableTempId;
+  const realVariableId = tempIdToRealId[variableTempId];
+  if (!realVariableId) {
+    throw new Error('Figma created the variable but did not return its server ID. Refresh variables before retrying.');
+  }
 
   return {
     variable_id: realVariableId,

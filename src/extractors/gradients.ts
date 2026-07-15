@@ -39,13 +39,17 @@ export function extractGradients(nodes: ParsedNode[]): GradientToken[] {
 
       const gradientType = fill.type.replace('GRADIENT_', '') as FigmaGradientType;
       counters[gradientType]++;
+      const paintOpacity: number = fill.opacity ?? 1;
 
       const stops: GradientStop[] = (fill.gradientStops ?? []).map(
-        (stop: { position: number; color: FigmaRGBA }) => ({
-          position: stop.position,
-          color_hex: rgbaToHex(stop.color),
-          color_rgba: figmaRgbaToInt(stop.color),
-        }),
+        (stop: { position: number; color: FigmaRGBA }) => {
+          const color = { ...stop.color, a: stop.color.a * paintOpacity };
+          return {
+            position: stop.position,
+            color_hex: rgbaToHex(color),
+            color_rgba: figmaRgbaToInt(color),
+          };
+        },
       );
 
       const handlePositions: { x: number; y: number }[] = (

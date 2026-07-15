@@ -4,7 +4,6 @@
  */
 
 import { z } from 'zod';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import type { ImageExportOptions } from '../../api/client.js';
@@ -12,11 +11,12 @@ import type { CompressionResult } from '../../types/tokens.js';
 import { compressImageBuffer } from '../../api/tinyjpg.js';
 import { mapNodeToDetail } from '../mappers/css-mapper.js';
 import { resolveParams } from '../utils/normalize-node-id.js';
+import { atomicWriteOutputFile, nodeIdFilenamePart, prepareOutputDirectory } from '../utils/output-path.js';
 
 export const getScreenshotSchema = {
   file_id: z.string().describe('Figma file ID or full Figma URL (e.g. https://www.figma.com/design/FILE_ID/...)'),
   node_id: z.string().optional().describe('Node to screenshot (usually a frame). Auto-extracted from URL if not provided.'),
-  scale: z.number().optional().default(1).describe('Export scale (1-4)'),
+  scale: z.number().finite().min(1).max(4).optional().default(1).describe('Export scale (1-4)'),
   output_dir: z.string().optional().default('.figma').describe('Directory to save'),
   compress: z.boolean().optional().default(false).describe('Compress output via TinyJPG API (requires TINYJPG_TOKEN env var)'),
 };
@@ -86,7 +86,7 @@ export async function handleGetScreenshot(
   }
 
   const scale = params.scale ?? 1;
-  const outputDir = params.output_dir ?? '.figma';
+  const outputDir = prepareOutputDirectory(params.output_dir ?? '.figma');
 
   const token = process.env.FIGMA_TOKEN;
   if (!token) {
@@ -122,14 +122,11 @@ export async function handleGetScreenshot(
     }
   }
 
-  // Write to disk
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
-
   const safeName = node.name.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
-  const filePath = path.join(outputDir, `${safeName}_screenshot.png`);
-  fs.writeFileSync(filePath, fileBuffer);
+  const filePath = atomicWriteOutputFile(
+    path.join(outputDir, `${safeName}_${nodeIdFilenamePart(nodeId)}_screenshot.png`),
+    fileBuffer,
+  );
 
   // Build structural summary from mapped detail
   const fileCtx = { styles: entry.file.styles, components: entry.file.components };

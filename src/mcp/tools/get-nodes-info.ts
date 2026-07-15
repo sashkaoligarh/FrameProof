@@ -4,8 +4,6 @@
  */
 
 import { z } from 'zod';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import type { NodeDetail, NodeDetailDeduped } from '../../types/mcp.js';
 import { mapNodeToDetail } from '../mappers/css-mapper.js';
@@ -14,16 +12,25 @@ import { deduplicateStylesArray } from '../utils/style-dedup.js';
 import { collapseSvgGroups } from '../utils/svg-collapse.js';
 import { buildNodeSummary, type NodeSummary } from '../utils/node-summary.js';
 import { normalizeNodeId, resolveParams } from '../utils/normalize-node-id.js';
+import { atomicWriteOutputFile } from '../utils/output-path.js';
+
+const MAX_DEPTH = 20;
+const MAX_RESPONSE_CHARS = 1_000_000;
+const MAX_NODE_IDS = 100;
 
 export const getNodesInfoSchema = {
   file_id: z.string().describe('Figma file ID or full Figma URL (e.g. https://www.figma.com/design/FILE_ID/...)'),
-  node_ids: z.array(z.string()).describe('Array of node IDs'),
-  depth: z.number().optional().default(3).describe('Max child depth (default: 3)'),
+  node_ids: z.array(z.string()).max(MAX_NODE_IDS).describe(`Array of node IDs (max ${MAX_NODE_IDS})`),
+  depth: z.number().finite().int().min(0).max(MAX_DEPTH).optional().default(3).describe(`Max child depth (0-${MAX_DEPTH}, default: 3)`),
   max_response_chars: z
     .number()
+    .finite()
+    .int()
+    .min(1)
+    .max(MAX_RESPONSE_CHARS)
     .optional()
     .default(DEFAULT_MAX_CHARS)
-    .describe('Max response size in chars; auto-trims if exceeded'),
+    .describe(`Max response size in chars (1-${MAX_RESPONSE_CHARS}); auto-trims if exceeded`),
   deduplicate_styles: z
     .boolean()
     .optional()
@@ -48,6 +55,7 @@ export interface GetNodesInfoResult {
   nodes: (NodeDetail | NodeDetailDeduped)[];
   total_requested: number;
   total_returned: number;
+  errors?: GetNodesInfoError[];
   _truncated?: boolean;
   _message?: string;
 }
@@ -58,7 +66,12 @@ export interface GetNodesInfoSavedResult {
   total_requested: number;
   total_returned: number;
   summaries: NodeSummary[];
-  _truncated?: boolean;
+  errors?: GetNodesInfoError[];
+}
+
+export interface GetNodesInfoError {
+  node_id: string;
+  error: string;
 }
 
 /**
@@ -82,50 +95,56 @@ export async function handleGetNodesInfo(
 
   const fileCtx = { styles: entry.file.styles, components: entry.file.components };
 
-  const details = params.node_ids.map((rawId) => {
+  const details: NodeDetail[] = [];
+  const errors: GetNodesInfoError[] = [];
+  for (const rawId of params.node_ids) {
     const nodeId = normalizeNodeId(rawId);
     const node = entry.nodes.find((n) => n.node_id === nodeId);
     if (!node) {
-      throw new Error(
-        `Node "${nodeId}" not found in file "${fileId}". ` +
-          `Use get_document_structure to discover available node IDs.`,
-      );
+      errors.push({
+        node_id: nodeId,
+        error:
+          `Node "${nodeId}" not found in file "${fileId}". ` +
+          'Use get_document_structure to discover available node IDs.',
+      });
+      continue;
     }
-    // SVG collapse first (per T030 pipeline order)
-    return collapseSvgGroups(mapNodeToDetail(node.raw, entry.tokens, depth, fileCtx));
-  });
-
-  const maxChars = params.max_response_chars ?? DEFAULT_MAX_CHARS;
-  const trimResult = trimNodeDetailArray(details, maxChars);
+    try {
+      // SVG collapse first (per T030 pipeline order)
+      details.push(collapseSvgGroups(mapNodeToDetail(node.raw, entry.tokens, depth, fileCtx)));
+    } catch (error) {
+      errors.push({
+        node_id: nodeId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   // If save_to is specified, write full data to file and return summaries
   if (params.save_to) {
     let dataToSave: (NodeDetail | NodeDetailDeduped)[];
     if (params.deduplicate_styles) {
-      dataToSave = deduplicateStylesArray(trimResult.data);
+      dataToSave = deduplicateStylesArray(details);
     } else {
-      dataToSave = trimResult.data;
+      dataToSave = details;
     }
 
     const jsonStr = JSON.stringify(dataToSave, null, 2);
-    const dir = path.dirname(params.save_to);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(params.save_to, jsonStr, 'utf-8');
+    const savedTo = atomicWriteOutputFile(params.save_to, jsonStr);
 
     const result: GetNodesInfoSavedResult = {
-      saved_to: params.save_to,
+      saved_to: savedTo,
       file_size_bytes: Buffer.byteLength(jsonStr, 'utf-8'),
       total_requested: params.node_ids.length,
-      total_returned: trimResult.data.length,
+      total_returned: details.length,
       summaries: details.map((d) => buildNodeSummary(d)),
     };
-    if (trimResult.truncated) {
-      result._truncated = true;
-    }
+    if (errors.length > 0) result.errors = errors;
     return result;
   }
+
+  const maxChars = params.max_response_chars ?? DEFAULT_MAX_CHARS;
+  const trimResult = trimNodeDetailArray(details, maxChars);
 
   if (params.deduplicate_styles) {
     const dedupedNodes = deduplicateStylesArray(trimResult.data);
@@ -134,6 +153,7 @@ export async function handleGetNodesInfo(
       total_requested: params.node_ids.length,
       total_returned: dedupedNodes.length,
     };
+    if (errors.length > 0) result.errors = errors;
     if (trimResult.truncated) {
       result._truncated = true;
       result._message = trimResult.message!;
@@ -146,6 +166,7 @@ export async function handleGetNodesInfo(
     total_requested: params.node_ids.length,
     total_returned: trimResult.data.length,
   };
+  if (errors.length > 0) result.errors = errors;
 
   if (trimResult.truncated) {
     result._truncated = true;

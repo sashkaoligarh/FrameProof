@@ -5,6 +5,9 @@
 
 const FIGMA_API_BASE = 'https://api.figma.com/v1';
 const MAX_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 250;
+const MAX_RETRY_DELAY_MS = 30_000;
+const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
 const DEFAULT_TIMEOUT_MS = 30_000;
 /** Longer timeout for file fetches (large files with include_hidden can be 50MB+) */
 const FILE_FETCH_TIMEOUT_MS = 180_000;
@@ -32,9 +35,8 @@ export class FigmaApiError extends Error {
 }
 
 /** Mask a Figma token for safe logging. */
-export function maskToken(token: string): string {
-  if (token.length <= 8) return '***';
-  return `${token.slice(0, 5)}***`;
+export function maskToken(_token: string): string {
+  return '***';
 }
 
 /**
@@ -61,7 +63,9 @@ export async function fetchFigmaFile(
     url += `?${query}`;
   }
 
-  return fetchWithRetry(url, token, fileId, FILE_FETCH_TIMEOUT_MS);
+  const result = await fetchWithRetry(url, token, fileId, FILE_FETCH_TIMEOUT_MS);
+  assertFigmaFileResponse(result, `file ${fileId}`);
+  return result;
 }
 
 /**
@@ -77,7 +81,9 @@ export async function fetchFigmaNodes(
   params.set('ids', nodeIds.join(','));
 
   const url = `${FIGMA_API_BASE}/files/${encodeURIComponent(fileId)}/nodes?${params.toString()}`;
-  return fetchWithRetry(url, token, fileId);
+  const result = await fetchWithRetry(url, token, fileId);
+  assertFigmaNodesResponse(result, `nodes for file ${fileId}`);
+  return result;
 }
 
 export interface ImageExportOptions {
@@ -112,9 +118,8 @@ export async function fetchFigmaImages(
 
   const url = `${FIGMA_API_BASE}/images/${encodeURIComponent(fileId)}?${params.toString()}`;
   process.stderr.write(`Requesting image render for ${nodeIds.length} node(s) [${options.format}, scale=${options.scale ?? 1}]...\n`);
-  const result = (await fetchWithRetry(url, token, fileId, IMAGE_RENDER_TIMEOUT_MS)) as {
-    images: Record<string, string | null>;
-  };
+  const result = await fetchWithRetry(url, token, fileId, IMAGE_RENDER_TIMEOUT_MS);
+  assertFigmaImagesResponse(result, `images for file ${fileId}`);
   process.stderr.write(`Image render URLs received for ${Object.keys(result.images).length} node(s).\n`);
   return result.images;
 }
@@ -123,15 +128,7 @@ export async function fetchFigmaImages(
  * Download a binary image from a URL.
  */
 export async function downloadImage(imageUrl: string): Promise<ArrayBuffer> {
-  const response = await fetch(imageUrl, {
-    signal: AbortSignal.timeout(IMAGE_DOWNLOAD_TIMEOUT_MS),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
-  }
-
-  return response.arrayBuffer();
+  return downloadWithRetry(imageUrl);
 }
 
 /**
@@ -164,10 +161,7 @@ export async function downloadImagesBatch(
   return results;
 }
 
-/**
- * Check if an error is a timeout/abort error.
- * These should NOT be retried — if Figma couldn't respond in time, retrying just wastes time.
- */
+/** Check if an error is a timeout/abort error. */
 function isTimeoutError(error: unknown): boolean {
   if (error instanceof DOMException && error.name === 'AbortError') return true;
   if (error instanceof DOMException && error.name === 'TimeoutError') return true;
@@ -182,9 +176,8 @@ async function fetchWithRetry(
   fileId: string,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<unknown> {
-  let lastError: Error | null = null;
-
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    let response: Response;
     try {
       if (attempt > 0) {
         process.stderr.write(`Retry ${attempt}/${MAX_RETRIES} for ${fileId}...\n`);
@@ -193,7 +186,7 @@ async function fetchWithRetry(
       const startTime = Date.now();
       process.stderr.write(`Figma API request (timeout: ${Math.round(timeoutMs / 1000)}s)...\n`);
 
-      const response = await fetch(url, {
+      response = await fetch(url, {
         headers: {
           'X-Figma-Token': token,
         },
@@ -201,94 +194,216 @@ async function fetchWithRetry(
       });
 
       const elapsed = Math.round((Date.now() - startTime) / 1000);
-
-      if (response.status === 429) {
-        const retryAfter = response.headers.get('Retry-After');
-        let waitSeconds = retryAfter ? parseInt(retryAfter, 10) : 5;
-
-        // Figma sometimes returns Unix timestamps or absurd values in Retry-After.
-        // If the value is > 120 seconds, it's likely a timestamp or error — don't wait.
-        if (isNaN(waitSeconds) || waitSeconds > 120) {
-          throw new FigmaApiError(
-            `Rate limited by Figma API (Retry-After: ${retryAfter ?? 'unknown'}). ` +
-              `Wait a minute and try again.`,
-            429,
-            fileId,
-          );
-        }
-
-        if (attempt >= MAX_RETRIES) {
-          throw new FigmaApiError(
-            `Rate limited by Figma API after ${MAX_RETRIES} retries. ` +
-              `Try again later or use --page/--node to reduce request scope.`,
-            429,
-            fileId,
-          );
-        }
-
-        // Cap wait to 30s max
-        waitSeconds = Math.min(waitSeconds, 30);
-        const waitMs = waitSeconds * 1000;
-
-        process.stderr.write(
-          `Rate limited (429). Waiting ${waitSeconds}s before retry ${attempt + 1}/${MAX_RETRIES}...\n`,
-        );
-        await sleep(waitMs);
-        continue;
-      }
-
-      if (response.status === 403) {
-        throw new FigmaApiError(
-          `Access denied. Check that your token (${maskToken(token)}) has read access to file ${fileId}.`,
-          403,
-          fileId,
-        );
-      }
-
-      if (response.status === 404) {
-        throw new FigmaApiError(
-          `File not found: ${fileId}. Check the file ID or URL.`,
-          404,
-          fileId,
-        );
-      }
-
-      if (!response.ok) {
-        throw new FigmaApiError(
-          `Figma API error: ${response.status} ${response.statusText}`,
-          response.status,
-          fileId,
-        );
-      }
-
-      process.stderr.write(`Figma API responded in ${elapsed}s, parsing JSON...\n`);
-      const json = await response.json();
-      process.stderr.write(`JSON parsed successfully.\n`);
-      return json;
+      process.stderr.write(`Figma API responded in ${elapsed}s.\n`);
     } catch (error) {
-      if (error instanceof FigmaApiError) throw error;
-
-      // NEVER retry timeout errors — Figma won't magically get faster
-      if (isTimeoutError(error)) {
+      const timedOut = isTimeoutError(error);
+      if (attempt >= MAX_RETRIES && timedOut) {
         const secs = Math.round(timeoutMs / 1000);
         throw new Error(
-          `Figma API timed out after ${secs}s for file "${fileId}". ` +
+          `Figma API timed out after ${MAX_RETRIES + 1} attempts of ${secs}s for file "${fileId}". ` +
             `The file may be very large. Try again or use node_id to fetch a specific section.`,
         );
       }
 
-      lastError = error instanceof Error ? error : new Error(String(error));
-      process.stderr.write(`Network error: ${lastError.message}. ${attempt < MAX_RETRIES ? 'Retrying...' : 'Giving up.'}\n`);
-
-      if (attempt >= MAX_RETRIES) break;
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt >= MAX_RETRIES) {
+        throw new Error(
+          `Figma API network request failed after ${MAX_RETRIES + 1} attempts for "${fileId}". ` +
+            `Check network connectivity and retry. Last error: ${message}`,
+        );
+      }
+      process.stderr.write(`Figma API ${timedOut ? 'timeout' : 'network error'}. Retrying safe GET request...\n`);
+      await sleep(retryDelayMs(attempt));
+      continue;
     }
+
+    if (isRetryableStatus(response.status) && attempt < MAX_RETRIES) {
+      const delayMs = retryDelayMs(attempt, response.headers.get('Retry-After'));
+      await discardResponse(response);
+      process.stderr.write(
+        `Figma API returned HTTP ${response.status}. Retrying safe GET request in ${delayMs}ms...\n`,
+      );
+      await sleep(delayMs);
+      continue;
+    }
+
+    if (response.status === 429) {
+      throw new FigmaApiError(
+        `Rate limited by Figma API after ${MAX_RETRIES} retries. ` +
+          `Try again later or reduce request scope.`,
+        429,
+        fileId,
+      );
+    }
+
+    if (response.status === 403) {
+      throw new FigmaApiError(
+        `Access denied. Check that your token (${maskToken(token)}) has read access to file ${fileId}.`,
+        403,
+        fileId,
+      );
+    }
+
+    if (response.status === 404) {
+      throw new FigmaApiError(
+        `File not found: ${fileId}. Check the file ID or URL.`,
+        404,
+        fileId,
+      );
+    }
+
+    if (!response.ok) {
+      throw new FigmaApiError(
+        `Figma API error: ${response.status} ${response.statusText}`,
+        response.status,
+        fileId,
+      );
+    }
+
+    return parseJsonResponse(response, `Figma API response for file "${fileId}"`);
   }
 
-  throw lastError ?? new Error('Unknown fetch error');
+  throw new Error('Unexpected: Figma GET request exhausted retries without a result');
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || TRANSIENT_STATUSES.has(status);
+}
+
+function retryDelayMs(attempt: number, retryAfter: string | null = null): number {
+  const parsedRetryAfter = parseRetryAfterMs(retryAfter);
+  if (parsedRetryAfter !== null) {
+    return Math.min(parsedRetryAfter, MAX_RETRY_DELAY_MS);
+  }
+
+  const exponential = Math.min(RETRY_BASE_DELAY_MS * (2 ** attempt), MAX_RETRY_DELAY_MS);
+  return Math.floor(exponential / 2 + Math.random() * exponential / 2);
+}
+
+function parseRetryAfterMs(value: string | null): number | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+    return Number.isFinite(seconds) ? Math.max(0, Math.ceil(seconds * 1000)) : null;
+  }
+
+  const dateMs = Date.parse(trimmed);
+  return Number.isNaN(dateMs) ? null : Math.max(0, dateMs - Date.now());
+}
+
+async function discardResponse(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // The body may already be closed by the fetch implementation.
+  }
+}
+
+async function parseJsonResponse(response: Response, context: string): Promise<unknown> {
+  const text = await response.text();
+  if (text.trim() === '') {
+    throw new Error(`${context} was empty; expected JSON.`);
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new Error(`${context} contained malformed JSON.`);
+  }
+}
+
+async function downloadWithRetry(imageUrl: string): Promise<ArrayBuffer> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    let response: Response;
+    try {
+      response = await fetch(imageUrl, {
+        signal: AbortSignal.timeout(IMAGE_DOWNLOAD_TIMEOUT_MS),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt >= MAX_RETRIES) {
+        if (isTimeoutError(error)) {
+          throw new Error(
+            `Image download timed out after ${MAX_RETRIES + 1} attempts of ` +
+              `${Math.round(IMAGE_DOWNLOAD_TIMEOUT_MS / 1000)}s.`,
+          );
+        }
+        throw new Error(
+          `Image download failed after ${MAX_RETRIES + 1} attempts. ` +
+            `Check network connectivity and retry. Last error: ${message}`,
+        );
+      }
+      await sleep(retryDelayMs(attempt));
+      continue;
+    }
+
+    if (isRetryableStatus(response.status) && attempt < MAX_RETRIES) {
+      const delayMs = retryDelayMs(attempt, response.headers.get('Retry-After'));
+      await discardResponse(response);
+      await sleep(delayMs);
+      continue;
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
+    }
+    return response.arrayBuffer();
+  }
+
+  throw new Error('Unexpected: image download exhausted retries without a result');
+}
+
+type JsonObject = Record<string, unknown>;
+
+function isObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function invalidResponse(context: string, detail: string): never {
+  throw new Error(`Invalid Figma API response for ${context}: ${detail}.`);
+}
+
+function assertFigmaFileResponse(value: unknown, context: string): asserts value is JsonObject {
+  if (!isObject(value)) invalidResponse(context, 'expected an object');
+  if (typeof value.name !== 'string') invalidResponse(context, 'missing string name');
+  if (typeof value.lastModified !== 'string') invalidResponse(context, 'missing string lastModified');
+  if (typeof value.version !== 'string') invalidResponse(context, 'missing string version');
+  if (!isObject(value.document) || typeof value.document.type !== 'string') {
+    invalidResponse(context, 'missing document root');
+  }
+  for (const key of ['components', 'componentSets', 'styles'] as const) {
+    if (value[key] !== undefined && !isObject(value[key])) {
+      invalidResponse(context, `${key} must be an object`);
+    }
+  }
+}
+
+function assertFigmaNodesResponse(value: unknown, context: string): asserts value is JsonObject {
+  if (!isObject(value) || !isObject(value.nodes)) {
+    invalidResponse(context, 'missing nodes object');
+  }
+  for (const node of Object.values(value.nodes)) {
+    if (node !== null && (!isObject(node) || !isObject(node.document))) {
+      invalidResponse(context, 'node entries must contain document objects or be null');
+    }
+  }
+}
+
+function assertFigmaImagesResponse(
+  value: unknown,
+  context: string,
+): asserts value is { images: Record<string, string | null> } {
+  if (!isObject(value) || !isObject(value.images)) {
+    invalidResponse(context, 'missing images object');
+  }
+  for (const imageUrl of Object.values(value.images)) {
+    if (imageUrl !== null && typeof imageUrl !== 'string') {
+      invalidResponse(context, 'image URLs must be strings or null');
+    }
+  }
 }
 
 // ─── Write API Methods ───────────────────────────────────
@@ -300,15 +415,14 @@ import type {
   DevResourceCreateRequest,
   DevResourceUpdateRequest,
   GetDevResourcesResponse,
+  PostDevResourcesResponse,
+  PutDevResourcesResponse,
   PostCommentRequest,
   GetCommentsResponse,
   FigmaComment,
 } from '../types/write-api.js';
 
-/**
- * Shared write-request helper with structured error handling.
- * Handles 429 Retry-After, 403 (Enterprise/scopes), 404, 400.
- */
+/** Shared request helper for the read/write endpoints grouped below. */
 async function figmaWriteRequest(
   url: string,
   token: string,
@@ -321,37 +435,59 @@ async function figmaWriteRequest(
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
   }
+  const safeToRetry = method === 'GET';
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (safeToRetry && attempt < MAX_RETRIES) {
+        await sleep(retryDelayMs(attempt));
+        continue;
+      }
+
+      if (!safeToRetry) {
+        throw new Error(
+          `Figma ${method} request failed before a response was received; its outcome is unknown. ` +
+            `Automatic retry was skipped to avoid a duplicate mutation. Verify remote state before retrying. ` +
+            `Cause: ${message}`,
+        );
+      }
+
+      const timeoutDetail = isTimeoutError(error) ? 'timed out' : 'failed';
+      throw new Error(
+        `Figma GET request ${timeoutDetail} after ${attempt + 1} attempt(s). ` +
+          `Check network connectivity and retry. Cause: ${message}`,
+      );
+    }
+
+    if (safeToRetry && isRetryableStatus(response.status) && attempt < MAX_RETRIES) {
+      const delayMs = retryDelayMs(attempt, response.headers.get('Retry-After'));
+      await discardResponse(response);
+      await sleep(delayMs);
+      continue;
+    }
 
     if (response.status === 429) {
-      const retryAfter = response.headers.get('Retry-After');
-      let waitSeconds = retryAfter ? parseInt(retryAfter, 10) : 5;
-
-      if (isNaN(waitSeconds) || waitSeconds > 120) {
-        throw new FigmaApiError(
-          `Rate limited by Figma API. Retry after ${retryAfter ?? 'unknown'}s.`,
-          429,
-          url,
-        );
-      }
-      if (attempt >= MAX_RETRIES) {
-        throw new FigmaApiError(
-          `Rate limited by Figma API after ${MAX_RETRIES} retries. Retry after ${waitSeconds}s.`,
-          429,
-          url,
-        );
-      }
-      waitSeconds = Math.min(waitSeconds, 30);
-      process.stderr.write(`Rate limited (429). Waiting ${waitSeconds}s...\n`);
-      await sleep(waitSeconds * 1000);
-      continue;
+      const parsedDelay = parseRetryAfterMs(response.headers.get('Retry-After'));
+      const retryGuidance = parsedDelay === null
+        ? 'Retry later.'
+        : `Retry after at least ${Math.ceil(parsedDelay / 1000)} second(s).`;
+      const mutationGuidance = safeToRetry
+        ? ''
+        : ' Automatic retry was skipped to avoid a duplicate mutation.';
+      throw new FigmaApiError(
+        `Rate limited by Figma API. ${retryGuidance}${mutationGuidance}`,
+        429,
+        url,
+      );
     }
 
     if (response.status === 403) {
@@ -396,7 +532,16 @@ async function figmaWriteRequest(
       );
     }
 
-    return response.json();
+    const text = await response.text();
+    if (text.trim() === '') return undefined;
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      throw new Error(
+        `Figma API returned malformed JSON for ${method} ${url}.` +
+          (safeToRetry ? '' : ' The mutation may have succeeded; verify remote state before retrying.'),
+      );
+    }
   }
 
   throw new Error('Unexpected: write request exhausted retries without error');
@@ -412,7 +557,9 @@ export async function getLocalVariables(
   token: string,
 ): Promise<GetLocalVariablesResponse> {
   const url = `${FIGMA_API_BASE}/files/${encodeURIComponent(fileKey)}/variables/local`;
-  return figmaWriteRequest(url, token, 'GET') as Promise<GetLocalVariablesResponse>;
+  const result = await figmaWriteRequest(url, token, 'GET');
+  assertVariablesResponse(result, `local variables for file ${fileKey}`);
+  return result as unknown as GetLocalVariablesResponse;
 }
 
 /**
@@ -426,12 +573,14 @@ export async function postVariables(
   body: PostVariablesRequestBody,
 ): Promise<PostVariablesResponse> {
   const url = `${FIGMA_API_BASE}/files/${encodeURIComponent(fileKey)}/variables`;
-  return figmaWriteRequest(url, token, 'POST', body) as Promise<PostVariablesResponse>;
+  const result = await figmaWriteRequest(url, token, 'POST', body);
+  assertStatusResponse(result, `variable mutation for file ${fileKey}`);
+  return result as unknown as PostVariablesResponse;
 }
 
 /**
  * GET /v1/files/{file_key}/dev_resources
- * List dev resources for a file, optionally filtered by node_id.
+ * List dev resources for a file, optionally filtered by node_ids.
  */
 export async function getDevResources(
   fileKey: string,
@@ -440,9 +589,12 @@ export async function getDevResources(
 ): Promise<GetDevResourcesResponse> {
   let url = `${FIGMA_API_BASE}/files/${encodeURIComponent(fileKey)}/dev_resources`;
   if (nodeId) {
-    url += `?node_id=${encodeURIComponent(nodeId)}`;
+    const params = new URLSearchParams({ node_ids: nodeId });
+    url += `?${params.toString()}`;
   }
-  return figmaWriteRequest(url, token, 'GET') as Promise<GetDevResourcesResponse>;
+  const result = await figmaWriteRequest(url, token, 'GET');
+  assertResourceList(result, 'dev resources');
+  return result as GetDevResourcesResponse;
 }
 
 /**
@@ -452,11 +604,11 @@ export async function getDevResources(
 export async function postDevResources(
   token: string,
   resources: DevResourceCreateRequest[],
-): Promise<{ dev_resources: Array<{ id: string; name: string; url: string }> }> {
+): Promise<PostDevResourcesResponse> {
   const url = `${FIGMA_API_BASE}/dev_resources`;
-  return figmaWriteRequest(url, token, 'POST', { dev_resources: resources }) as Promise<{
-    dev_resources: Array<{ id: string; name: string; url: string }>;
-  }>;
+  const result = await figmaWriteRequest(url, token, 'POST', { dev_resources: resources });
+  assertResourceArrayResponse(result, 'links_created', 'created dev resources');
+  return result as PostDevResourcesResponse;
 }
 
 /**
@@ -466,20 +618,23 @@ export async function postDevResources(
 export async function putDevResources(
   token: string,
   resources: DevResourceUpdateRequest[],
-): Promise<unknown> {
+): Promise<PutDevResourcesResponse> {
   const url = `${FIGMA_API_BASE}/dev_resources`;
-  return figmaWriteRequest(url, token, 'PUT', { dev_resources: resources });
+  const result = await figmaWriteRequest(url, token, 'PUT', { dev_resources: resources });
+  assertPutDevResourcesResponse(result, 'updated dev resources');
+  return result as PutDevResourcesResponse;
 }
 
 /**
- * DELETE /v1/dev_resources/{id}
+ * DELETE /v1/files/{file_key}/dev_resources/{dev_resource_id}
  * Delete a single dev resource.
  */
 export async function deleteDevResource(
+  fileKey: string,
   token: string,
   resourceId: string,
 ): Promise<void> {
-  const url = `${FIGMA_API_BASE}/dev_resources/${encodeURIComponent(resourceId)}`;
+  const url = `${FIGMA_API_BASE}/files/${encodeURIComponent(fileKey)}/dev_resources/${encodeURIComponent(resourceId)}`;
   await figmaWriteRequest(url, token, 'DELETE');
 }
 
@@ -493,7 +648,9 @@ export async function postComment(
   body: PostCommentRequest,
 ): Promise<FigmaComment> {
   const url = `${FIGMA_API_BASE}/files/${encodeURIComponent(fileKey)}/comments`;
-  return figmaWriteRequest(url, token, 'POST', body) as Promise<FigmaComment>;
+  const result = await figmaWriteRequest(url, token, 'POST', body);
+  assertComment(result, 'created comment');
+  return result as unknown as FigmaComment;
 }
 
 /**
@@ -505,5 +662,82 @@ export async function getComments(
   token: string,
 ): Promise<GetCommentsResponse> {
   const url = `${FIGMA_API_BASE}/files/${encodeURIComponent(fileKey)}/comments`;
-  return figmaWriteRequest(url, token, 'GET') as Promise<GetCommentsResponse>;
+  const result = await figmaWriteRequest(url, token, 'GET');
+  if (!isObject(result) || !Array.isArray(result.comments)) {
+    invalidResponse('comments', 'missing comments array');
+  }
+  for (const comment of result.comments) assertComment(comment, 'comments');
+  return result as unknown as GetCommentsResponse;
+}
+
+function assertStatusResponse(value: unknown, context: string): asserts value is JsonObject {
+  if (!isObject(value)) invalidResponse(context, 'expected an object');
+  if (typeof value.status !== 'number' || typeof value.error !== 'boolean') {
+    invalidResponse(context, 'missing numeric status or boolean error');
+  }
+}
+
+function assertVariablesResponse(value: unknown, context: string): asserts value is JsonObject {
+  assertStatusResponse(value, context);
+  if (value.meta === undefined) return;
+  if (!isObject(value.meta) || !isObject(value.meta.variableCollections) || !isObject(value.meta.variables)) {
+    invalidResponse(context, 'meta must contain variableCollections and variables objects');
+  }
+}
+
+function assertResourceList(value: unknown, context: string): asserts value is JsonObject {
+  assertResourceArrayResponse(value, 'dev_resources', context);
+}
+
+function assertResourceArrayResponse(
+  value: unknown,
+  key: string,
+  context: string,
+): asserts value is JsonObject {
+  if (!isObject(value) || !Array.isArray(value[key])) {
+    invalidResponse(context, `missing ${key} array`);
+  }
+  for (const resource of value[key]) {
+    if (
+      !isObject(resource) ||
+      typeof resource.id !== 'string' ||
+      typeof resource.name !== 'string' ||
+      typeof resource.url !== 'string'
+    ) {
+      invalidResponse(context, `${key} entries must contain string id, name, and url`);
+    }
+  }
+}
+
+function assertPutDevResourcesResponse(value: unknown, context: string): asserts value is JsonObject {
+  if (!isObject(value)) invalidResponse(context, 'expected an object');
+  if (value.links_updated === undefined && value.errors === undefined) {
+    invalidResponse(context, 'missing links_updated or errors array');
+  }
+  if (value.links_updated !== undefined) {
+    assertResourceArrayResponse(value, 'links_updated', context);
+  }
+  if (value.errors !== undefined) {
+    if (!Array.isArray(value.errors)) invalidResponse(context, 'errors must be an array');
+    for (const error of value.errors) {
+      if (
+        !isObject(error) ||
+        (error.id !== undefined && typeof error.id !== 'string') ||
+        typeof error.error !== 'string'
+      ) {
+        invalidResponse(context, 'errors entries must contain a string error and optional string id');
+      }
+    }
+  }
+}
+
+function assertComment(value: unknown, context: string): asserts value is JsonObject {
+  if (
+    !isObject(value) ||
+    typeof value.id !== 'string' ||
+    typeof value.message !== 'string' ||
+    !isObject(value.user)
+  ) {
+    invalidResponse(context, 'comment must contain string id, string message, and user object');
+  }
 }

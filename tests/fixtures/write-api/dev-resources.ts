@@ -2,7 +2,11 @@
  * Shared fixtures for Dev Resources API tests.
  */
 
-import type { DevResourceResponse } from '../../../src/types/write-api.js';
+import type {
+  DevResourceResponse,
+  PostDevResourcesResponse,
+  PutDevResourcesResponse,
+} from '../../../src/types/write-api.js';
 
 export const MOCK_FILE_KEY = 'abc123';
 export const MOCK_TOKEN = 'figd_test_token_123';
@@ -28,6 +32,24 @@ export const MOCK_LIST_RESPONSE = {
   dev_resources: [MOCK_DEV_RESOURCE, MOCK_DEV_RESOURCE_2],
 };
 
-export const MOCK_CREATE_RESPONSE = {
-  dev_resources: [{ id: 'dev_resource_789', name: 'NewComponent.tsx', url: 'https://github.com/org/repo/blob/main/src/New.tsx' }],
+export const MOCK_CREATED_DEV_RESOURCE: DevResourceResponse = {
+  id: 'dev_resource_789',
+  name: 'NewComponent.tsx',
+  url: 'https://github.com/org/repo/blob/main/src/New.tsx',
+  file_key: MOCK_FILE_KEY,
+  node_id: MOCK_NODE_ID,
+};
+
+export const MOCK_CREATE_RESPONSE: PostDevResourcesResponse = {
+  links_created: [MOCK_CREATED_DEV_RESOURCE],
+};
+
+export const MOCK_UPDATED_DEV_RESOURCE: DevResourceResponse = {
+  ...MOCK_DEV_RESOURCE,
+  name: 'UpdatedButton.tsx',
+  url: 'https://github.com/org/repo/blob/main/src/UpdatedButton.tsx',
+};
+
+export const MOCK_UPDATE_RESPONSE: PutDevResourcesResponse = {
+  links_updated: [MOCK_UPDATED_DEV_RESOURCE],
 };

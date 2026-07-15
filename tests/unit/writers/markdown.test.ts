@@ -16,6 +16,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { generateMarkdown } from '../../../src/writers/markdown.js';
+import { generateCSS } from '../../../src/writers/css.js';
 import type {
   AllTokens,
   ComponentInfo,
@@ -611,5 +612,21 @@ describe('generateMarkdown — output format', () => {
   it('starts with a markdown heading', () => {
     const md = generateMarkdown(fullTokens, 'abc123', 'My Design System');
     expect(md.trimStart().startsWith('#')).toBe(true);
+  });
+});
+
+describe('generateMarkdown — CSS name consistency', () => {
+  it('uses the same sanitized collision-resolved names as design-system.css', () => {
+    const tokens = structuredClone(fullTokens);
+    tokens.colors[0].name = 'Brand/Primary';
+    tokens.colors[1].name = 'Brand Primary';
+
+    const markdown = generateMarkdown(tokens, 'abc123', 'My Design System');
+    const css = generateCSS(tokens, 'abc123');
+
+    for (const name of ['--color-brand-primary', '--color-brand-primary-2']) {
+      expect(markdown).toContain(name);
+      expect(css).toContain(`${name}:`);
+    }
   });
 });

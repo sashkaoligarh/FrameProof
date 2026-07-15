@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * MCP server entry point for figma-scaler.
  * Exposes design token extraction, node inspection, image export,
@@ -8,6 +9,8 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { TokenCache, type FetchResult } from './cache.js';
 import { parseFileIdOrUrl, fetchAndParse } from '../pipeline/fetch.js';
@@ -71,11 +74,45 @@ import { FIGMA_TOKENS_TEMPLATE, createTokensResourceHandlers } from './resources
 // ─── Configuration ──────────────────────────────────────
 
 const SERVER_NAME = 'figma-scaler';
-const SERVER_VERSION = '0.2.0';
+const SERVER_VERSION = '0.1.0';
+export const FIGMA_WRITE_ENABLEMENT_MESSAGE =
+  'Remote Figma mutations are disabled. Set FIGMA_SCALER_ENABLE_WRITES=1 in the MCP server environment and restart it to enable writes.';
+
+const LOCAL_FILE_WRITE_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: true,
+  openWorldHint: true,
+} as const;
+
+const REMOTE_READ_ANNOTATIONS = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: true,
+} as const;
+
+const REMOTE_CREATE_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: true,
+} as const;
+
+const REMOTE_DESTRUCTIVE_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+  openWorldHint: true,
+} as const;
 
 // ─── Shared State ───────────────────────────────────────
 
 export const cache = new TokenCache();
+
+function invalidateParsedFile(fileIdOrUrl: string): void {
+  cache.invalidate(parseFileIdOrUrl(fileIdOrUrl));
+}
 
 /**
  * Resolve FIGMA_TOKEN from environment.
@@ -83,6 +120,17 @@ export const cache = new TokenCache();
  */
 export function getFigmaToken(): string | null {
   return process.env.FIGMA_TOKEN ?? null;
+}
+
+export function figmaWritesEnabled(): boolean {
+  return process.env.FIGMA_SCALER_ENABLE_WRITES === '1';
+}
+
+function writeDisabledResult(toolName: string) {
+  return {
+    content: [{ type: 'text' as const, text: `Error: ${FIGMA_WRITE_ENABLEMENT_MESSAGE} Tool: ${toolName}.` }],
+    isError: true as const,
+  };
 }
 
 /**
@@ -97,8 +145,8 @@ export async function fetchFigmaData(fileId: string): Promise<FetchResult> {
       'FIGMA_TOKEN environment variable is not set.\n\n' +
         'To use figma-scaler MCP server:\n' +
         '1. Generate a personal access token at https://www.figma.com/developers/api#access-tokens\n' +
-        '2. Set it: export FIGMA_TOKEN="your-token-here"\n' +
-        '3. Or add it to your .env file',
+        '2. Set it in the MCP client environment or export FIGMA_TOKEN before starting the server.\n' +
+        'This project does not load .env files automatically.',
     );
   }
 
@@ -141,6 +189,7 @@ server.tool(
   'get_design_tokens',
   'Extract design tokens from a Figma file. Default: colors, gradients, typography, spacing, radii, shadows (excludes heavy components/images). Use save_to=".figma/tokens.json" for large files.',
   getDesignTokensSchema,
+  LOCAL_FILE_WRITE_ANNOTATIONS,
   async (params) => {
     try {
       const result = await handleGetDesignTokens(params, cache, fetchFigmaData);
@@ -165,6 +214,7 @@ server.tool(
   'get_node_info',
   'Get detailed info about a Figma node with CSS mappings, constraints, min/max sizes, applied styles, and token hints. Use save_to=".figma/{name}.json" for large nodes.',
   getNodeInfoSchema,
+  LOCAL_FILE_WRITE_ANNOTATIONS,
   async (params) => {
     try {
       const result = await handleGetNodeInfo(params, cache, fetchFigmaData);
@@ -189,6 +239,7 @@ server.tool(
   'get_nodes_info',
   'Batch get_node_info for multiple nodes. Use save_to to write to file instead of returning in context.',
   getNodesInfoSchema,
+  LOCAL_FILE_WRITE_ANNOTATIONS,
   async (params) => {
     try {
       const result = await handleGetNodesInfo(params, cache, fetchFigmaData);
@@ -213,6 +264,7 @@ server.tool(
   'get_css_variables',
   'Generate CSS Custom Properties from design tokens. Use save_to=".figma/design-system.css" to save and import in your project.',
   getCSSVariablesSchema,
+  LOCAL_FILE_WRITE_ANNOTATIONS,
   async (params) => {
     try {
       const result = await handleGetCSSVariables(params, cache, fetchFigmaData);
@@ -242,6 +294,7 @@ server.tool(
   'export_node_image',
   'Export a Figma node as an image file (SVG, PNG, JPG, or PDF)',
   exportNodeImageSchema,
+  LOCAL_FILE_WRITE_ANNOTATIONS,
   async (params) => {
     try {
       const result = await handleExportNodeImage(
@@ -330,6 +383,7 @@ server.tool(
   'get_screenshot',
   'Export a screenshot of a Figma frame with structural summary for visual verification',
   getScreenshotSchema,
+  LOCAL_FILE_WRITE_ANNOTATIONS,
   async (params) => {
     try {
       const result = await handleGetScreenshot(
@@ -353,7 +407,7 @@ server.tool(
   },
 );
 
-// ─── New Tools (v0.2.0) ─────────────────────────────────
+// ─── Analysis and Workflow Tools ────────────────────────
 
 server.tool(
   'get_frame_overview',
@@ -380,6 +434,7 @@ server.tool(
   'batch_screenshots',
   'Screenshot all direct children of a frame in one call. Returns file paths for each section.',
   batchScreenshotsSchema,
+  LOCAL_FILE_WRITE_ANNOTATIONS,
   async (params) => {
     try {
       const result = await handleBatchScreenshots(
@@ -407,6 +462,7 @@ server.tool(
   'export_page_analysis',
   'Full page analysis saved to file (markdown/JSON). Includes CSS mappings, design notes for mixed colors, absolute elements, component refs, non-standard values, orphan colors, missing auto-layout.',
   exportPageAnalysisSchema,
+  LOCAL_FILE_WRITE_ANNOTATIONS,
   async (params) => {
     try {
       const result = await handleExportPageAnalysis(params, cache, fetchFigmaData);
@@ -425,9 +481,10 @@ server.tool(
 );
 
 server.tool(
-  'pixel_perfect_orchestrator',
-  'Create a continuous-until-pass React/Astro pixel-perfect runbook with Figma section inventory, FSD/design-system rules, required artifacts, and strict figma-scaler gate commands.',
+  'plan_pixel_perfect_workflow',
+  'Create a plan-only React/Astro pixel-perfect runbook with Figma section inventory, project-rooted artifact paths, and safely quoted gate commands. Does not edit code, capture pages, run gates, or verify completion.',
   pixelPerfectOrchestratorSchema,
+  LOCAL_FILE_WRITE_ANNOTATIONS,
   async (params) => {
     try {
       const result = await handlePixelPerfectOrchestrator(params, cache, fetchFigmaData);
@@ -445,12 +502,13 @@ server.tool(
   },
 );
 
-// ─── Variables API Tools (v0.3.0) ───────────────────────
+// ─── Variables API Tools ────────────────────────────────
 
 server.tool(
   'get_variables',
   'Retrieve all local variables and collections from a Figma file. Requires Enterprise plan + file_variables:read scope.',
   getVariablesSchema,
+  REMOTE_READ_ANNOTATIONS,
   async (params) => {
     const token = getFigmaToken();
     if (!token) {
@@ -477,9 +535,11 @@ server.tool(
 
 server.tool(
   'create_variable_collection',
-  'Create a new variable collection in a Figma file. Idempotent: returns existing collection if name already exists. Requires Enterprise plan + file_variables:write scope.',
+  'Create a new variable collection in a Figma file. Returns an existing collection when a same-name collection is observed before creation; concurrent calls can still race. Requires Enterprise plan + file_variables:write scope.',
   createVariableCollectionSchema,
+  REMOTE_CREATE_ANNOTATIONS,
   async (params) => {
+    if (!figmaWritesEnabled()) return writeDisabledResult('create_variable_collection');
     const token = getFigmaToken();
     if (!token) {
       return {
@@ -489,6 +549,7 @@ server.tool(
     }
     try {
       const result = await handleCreateVariableCollection(params, token);
+      if (result.created) invalidateParsedFile(params.file_id);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };
@@ -505,9 +566,11 @@ server.tool(
 
 server.tool(
   'create_variable',
-  'Create a new variable in a Figma file. Idempotent: returns existing if name+collection match. Hex colors auto-converted to RGBA. Requires Enterprise plan + file_variables:write scope.',
+  'Create a new variable in a Figma file. Returns an existing variable when name+collection already match; concurrent calls can still race. Hex colors auto-converted to RGBA. Requires Enterprise plan + file_variables:write scope.',
   createVariableSchema,
+  REMOTE_CREATE_ANNOTATIONS,
   async (params) => {
+    if (!figmaWritesEnabled()) return writeDisabledResult('create_variable');
     const token = getFigmaToken();
     if (!token) {
       return {
@@ -520,6 +583,7 @@ server.tool(
         { ...params, resolved_type: params.resolved_type as 'COLOR' | 'FLOAT' | 'STRING' | 'BOOLEAN' },
         token,
       );
+      if (result.created) invalidateParsedFile(params.file_id);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };
@@ -538,7 +602,9 @@ server.tool(
   'update_variable',
   'Update an existing variable (name, mode values, scopes). Hex colors auto-converted to RGBA. Requires Enterprise plan + file_variables:write scope.',
   updateVariableSchema,
+  REMOTE_DESTRUCTIVE_ANNOTATIONS,
   async (params) => {
+    if (!figmaWritesEnabled()) return writeDisabledResult('update_variable');
     const token = getFigmaToken();
     if (!token) {
       return {
@@ -548,6 +614,7 @@ server.tool(
     }
     try {
       const result = await handleUpdateVariable(params, token);
+      invalidateParsedFile(params.file_id);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };
@@ -564,9 +631,11 @@ server.tool(
 
 server.tool(
   'delete_variable',
-  'Delete a variable from a Figma file. Use dry_run=true to preview without making changes. Requires Enterprise plan + file_variables:write scope.',
+  'Delete a variable from a Figma file. Defaults to dry_run=true; set dry_run=false to apply when writes are enabled. Requires Enterprise plan + file_variables:write scope.',
   deleteVariableSchema,
+  REMOTE_DESTRUCTIVE_ANNOTATIONS,
   async (params) => {
+    if (params.dry_run === false && !figmaWritesEnabled()) return writeDisabledResult('delete_variable');
     const token = getFigmaToken();
     if (!token) {
       return {
@@ -576,6 +645,7 @@ server.tool(
     }
     try {
       const result = await handleDeleteVariable(params, token);
+      if (params.dry_run === false) invalidateParsedFile(params.file_id);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };
@@ -592,18 +662,22 @@ server.tool(
 
 server.tool(
   'sync_variables',
-  'Batch create/update/delete variables and collections in a single API call. Supports dry_run. Hex colors auto-converted. Requires Enterprise plan + file_variables:write scope.',
+  'Batch create/update/delete variables and collections in a single API call. Defaults to dry_run=true; set dry_run=false to apply when writes are enabled. Hex colors auto-converted. Requires Enterprise plan + file_variables:write scope.',
   syncVariablesSchema,
+  REMOTE_DESTRUCTIVE_ANNOTATIONS,
   async (params) => {
+    const dryRun = params.dry_run ?? true;
+    if (!dryRun && !figmaWritesEnabled()) return writeDisabledResult('sync_variables');
     const token = getFigmaToken();
-    if (!token) {
+    if (!token && !dryRun) {
       return {
         content: [{ type: 'text' as const, text: 'Error: FIGMA_TOKEN environment variable is not set.' }],
         isError: true,
       };
     }
     try {
-      const result = await handleSyncVariables(params as Parameters<typeof handleSyncVariables>[0], token);
+      const result = await handleSyncVariables(params as Parameters<typeof handleSyncVariables>[0], token ?? '');
+      if (!dryRun) invalidateParsedFile(params.file_id);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };
@@ -624,6 +698,7 @@ server.tool(
   'list_dev_resources',
   'List dev resources (linked URLs) for a Figma file, optionally filtered by node_id. Requires file_dev_resources:read scope.',
   listDevResourcesSchema,
+  REMOTE_READ_ANNOTATIONS,
   async (params) => {
     const token = getFigmaToken();
     if (!token) {
@@ -650,9 +725,11 @@ server.tool(
 
 server.tool(
   'create_dev_resource',
-  'Attach a URL (dev resource) to a Figma node. Idempotent: returns existing if same URL is already on the node. Max 10 per node. Requires file_dev_resources:write scope.',
+  'Attach a URL (dev resource) to a Figma node. Returns an existing resource when the URL is already observed; concurrent calls can still race. Max 10 per node. Requires file_dev_resources:write scope.',
   createDevResourceSchema,
+  REMOTE_CREATE_ANNOTATIONS,
   async (params) => {
+    if (!figmaWritesEnabled()) return writeDisabledResult('create_dev_resource');
     const token = getFigmaToken();
     if (!token) {
       return {
@@ -680,7 +757,9 @@ server.tool(
   'update_dev_resource',
   'Update an existing dev resource (rename or change URL). Requires file_dev_resources:write scope.',
   updateDevResourceSchema,
+  REMOTE_DESTRUCTIVE_ANNOTATIONS,
   async (params) => {
+    if (!figmaWritesEnabled()) return writeDisabledResult('update_dev_resource');
     const token = getFigmaToken();
     if (!token) {
       return {
@@ -708,7 +787,9 @@ server.tool(
   'delete_dev_resource',
   'Delete a dev resource (unlink a URL from a Figma node). Requires file_dev_resources:write scope.',
   deleteDevResourceSchema,
+  REMOTE_DESTRUCTIVE_ANNOTATIONS,
   async (params) => {
+    if (!figmaWritesEnabled()) return writeDisabledResult('delete_dev_resource');
     const token = getFigmaToken();
     if (!token) {
       return {
@@ -738,7 +819,9 @@ server.tool(
   'post_comment',
   'Post a new top-level comment on a Figma file. Optionally anchor it to a node with x/y offset (FrameOffset format). Requires comments:write scope.',
   postCommentSchema,
+  REMOTE_CREATE_ANNOTATIONS,
   async (params) => {
+    if (!figmaWritesEnabled()) return writeDisabledResult('post_comment');
     const token = getFigmaToken();
     if (!token) {
       return {
@@ -766,7 +849,9 @@ server.tool(
   'reply_to_comment',
   'Post a reply to an existing comment thread in a Figma file. Requires comments:write scope.',
   replyToCommentSchema,
+  REMOTE_CREATE_ANNOTATIONS,
   async (params) => {
+    if (!figmaWritesEnabled()) return writeDisabledResult('reply_to_comment');
     const token = getFigmaToken();
     if (!token) {
       return {
@@ -794,6 +879,7 @@ server.tool(
   'get_comments',
   'Retrieve all comments from a Figma file, grouped into threads with replies nested under parent comments. Requires comments:read scope.',
   getCommentsSchema,
+  REMOTE_READ_ANNOTATIONS,
   async (params) => {
     const token = getFigmaToken();
     if (!token) {
@@ -860,9 +946,20 @@ async function main() {
   process.stderr.write(`${SERVER_NAME} MCP server connected via stdio.\n`);
 }
 
-main().catch((error) => {
-  process.stderr.write(`Fatal error: ${error instanceof Error ? error.message : String(error)}\n`);
-  process.exit(1);
-});
+function isDirectExecution(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectExecution()) {
+  main().catch((error) => {
+    process.stderr.write(`Fatal error: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  });
+}
 
 export { server };

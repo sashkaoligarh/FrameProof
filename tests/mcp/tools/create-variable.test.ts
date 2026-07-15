@@ -290,5 +290,17 @@ describe('handleCreateVariable', () => {
         ),
       ).rejects.toMatchObject({ status: 400 });
     });
+
+    it('never returns a temporary ID when Figma omits the server mapping', async () => {
+      mockGetLocalVariables.mockResolvedValue(MOCK_EMPTY_VARIABLES_RESPONSE);
+      mockPostVariables.mockResolvedValue({ status: 200, error: false, meta: { tempIdToRealId: {} } });
+
+      await expect(
+        handleCreateVariable(
+          { ...BASE_PARAMS, resolved_type: 'COLOR' },
+          MOCK_TOKEN,
+        ),
+      ).rejects.toThrow(/did not return its server ID/i);
+    });
   });
 });

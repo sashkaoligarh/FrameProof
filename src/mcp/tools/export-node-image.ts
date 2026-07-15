@@ -4,19 +4,19 @@
  */
 
 import { z } from 'zod';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import type { ImageExportOptions } from '../../api/client.js';
 import type { CompressionResult } from '../../types/tokens.js';
 import { isCompressibleFormat, compressImageBuffer } from '../../api/tinyjpg.js';
 import { resolveParams } from '../utils/normalize-node-id.js';
+import { atomicWriteOutputFile, nodeIdFilenamePart, prepareOutputDirectory } from '../utils/output-path.js';
 
 export const exportNodeImageSchema = {
   file_id: z.string().describe('Figma file ID or full Figma URL (e.g. https://www.figma.com/design/FILE_ID/...)'),
   node_id: z.string().optional().describe('Node to export. Auto-extracted from URL if not provided.'),
   format: z.enum(['svg', 'png', 'jpg', 'pdf']).optional().default('png').describe('Image format'),
-  scale: z.number().optional().default(1).describe('Scale for raster formats 1-4'),
+  scale: z.number().finite().min(1).max(4).optional().default(1).describe('Scale for raster formats 1-4'),
   output_dir: z.string().optional().default('.figma').describe('Directory to save'),
   compress: z.boolean().optional().default(false).describe('Compress output via TinyJPG API (requires TINYJPG_TOKEN env var)'),
 };
@@ -72,7 +72,7 @@ export async function handleExportNodeImage(
 
   const format = params.format ?? 'png';
   const scale = params.scale ?? 1;
-  const outputDir = params.output_dir ?? '.figma';
+  const outputDir = prepareOutputDirectory(params.output_dir ?? '.figma');
 
   // Get FIGMA_TOKEN from env
   const token = process.env.FIGMA_TOKEN;
@@ -109,14 +109,11 @@ export async function handleExportNodeImage(
     }
   }
 
-  // Write to disk
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
-
   const safeName = node.name.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
-  const filePath = path.join(outputDir, `${safeName}.${format}`);
-  fs.writeFileSync(filePath, fileBuffer);
+  const filePath = atomicWriteOutputFile(
+    path.join(outputDir, `${safeName}_${nodeIdFilenamePart(nodeId)}.${format}`),
+    fileBuffer,
+  );
 
   return {
     file_path: filePath,

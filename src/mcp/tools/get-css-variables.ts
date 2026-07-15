@@ -4,11 +4,10 @@
  */
 
 import { z } from 'zod';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import { generateCSS } from '../../writers/css.js';
 import { resolveParams } from '../utils/normalize-node-id.js';
+import { atomicWriteOutputFile } from '../utils/output-path.js';
 
 export const getCSSVariablesSchema = {
   file_id: z.string().describe('Figma file ID or full Figma URL (e.g. https://www.figma.com/design/FILE_ID/...)'),
@@ -36,12 +35,8 @@ export async function handleGetCSSVariables(
   const css = generateCSS(entry.tokens, fileId);
 
   if (params.save_to) {
-    const dir = path.dirname(params.save_to);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(params.save_to, css, 'utf-8');
-    return { css, saved: true, file_path: params.save_to };
+    const filePath = atomicWriteOutputFile(params.save_to, css);
+    return { css, saved: true, file_path: filePath };
   }
 
   return { css, saved: false };

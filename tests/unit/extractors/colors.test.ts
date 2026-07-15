@@ -187,6 +187,32 @@ describe('extractColors — RGBA precision (SC-001)', () => {
   });
 });
 
+describe('extractColors — paint opacity', () => {
+  it('combines paint opacity with the paint color alpha', () => {
+    const mockNode: ParsedNode = {
+      node_id: 'alpha:1',
+      node_type: 'RECTANGLE',
+      name: 'Alpha',
+      parent_id: null,
+      depth: 0,
+      raw: {
+        type: 'RECTANGLE',
+        fills: [{
+          type: 'SOLID',
+          color: { r: 1, g: 0, b: 0, a: 0.5 },
+          opacity: 0.5,
+        }],
+      } as unknown as Node,
+    };
+
+    const [color] = extractColors([mockNode], {});
+
+    expect(color.opacity).toBe(0.25);
+    expect(color.value_rgba.a).toBe(0.25);
+    expect(color.value_hex).toBe('#ff000040');
+  });
+});
+
 describe('extractColors — sorting', () => {
   const colors = extractColors(nodes, styles);
 

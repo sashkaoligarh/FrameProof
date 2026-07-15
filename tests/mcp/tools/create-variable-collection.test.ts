@@ -17,7 +17,6 @@ import {
   MOCK_COLLECTION,
   MOCK_GET_VARIABLES_RESPONSE,
   MOCK_EMPTY_VARIABLES_RESPONSE,
-  MOCK_POST_VARIABLES_RESPONSE,
 } from '../../fixtures/write-api/variables.js';
 import {
   MOCK_403_ENTERPRISE,
@@ -47,8 +46,7 @@ describe('handleCreateVariableCollection', () => {
 
   describe('success — creates new collection', () => {
     it('returns collection_id, name, and modes on success', async () => {
-      mockGetLocalVariables.mockResolvedValue(MOCK_EMPTY_VARIABLES_RESPONSE);
-      mockPostVariables.mockResolvedValue(MOCK_POST_VARIABLES_RESPONSE);
+      mockSuccessfulCreate('Brand Colors', ['Mode 1']);
 
       const result = await handleCreateVariableCollection(
         { file_id: MOCK_FILE_KEY, name: 'Brand Colors' },
@@ -62,8 +60,7 @@ describe('handleCreateVariableCollection', () => {
     });
 
     it('creates collection with specified modes', async () => {
-      mockGetLocalVariables.mockResolvedValue(MOCK_EMPTY_VARIABLES_RESPONSE);
-      mockPostVariables.mockResolvedValue(MOCK_POST_VARIABLES_RESPONSE);
+      mockSuccessfulCreate('Brand Colors', ['Light', 'Dark']);
 
       await handleCreateVariableCollection(
         { file_id: MOCK_FILE_KEY, name: 'Brand Colors', modes: ['Light', 'Dark'] },
@@ -76,11 +73,13 @@ describe('handleCreateVariableCollection', () => {
       // Should include a collection CREATE action
       expect(body.variableCollections).toBeDefined();
       expect(body.variableCollections!.some((c: { action: string }) => c.action === 'CREATE')).toBe(true);
+      expect(body.variableCollections![0]?.initialModeId).toBe(body.variableModes![0]?.id);
+      expect(body.variableModes?.map((mode) => mode.action)).toEqual(['UPDATE', 'CREATE']);
+      expect(body.variableModes?.map((mode) => mode.name)).toEqual(['Light', 'Dark']);
     });
 
     it('calls postVariables with correct file key and token', async () => {
-      mockGetLocalVariables.mockResolvedValue(MOCK_EMPTY_VARIABLES_RESPONSE);
-      mockPostVariables.mockResolvedValue(MOCK_POST_VARIABLES_RESPONSE);
+      mockSuccessfulCreate('New Collection', ['Mode 1']);
 
       await handleCreateVariableCollection(
         { file_id: MOCK_FILE_KEY, name: 'New Collection' },
@@ -91,8 +90,7 @@ describe('handleCreateVariableCollection', () => {
     });
 
     it('extracts file_key from full Figma URL', async () => {
-      mockGetLocalVariables.mockResolvedValue(MOCK_EMPTY_VARIABLES_RESPONSE);
-      mockPostVariables.mockResolvedValue(MOCK_POST_VARIABLES_RESPONSE);
+      mockSuccessfulCreate('New Collection', ['Mode 1']);
 
       const figmaUrl = `https://www.figma.com/design/${MOCK_FILE_KEY}/My-File`;
       await handleCreateVariableCollection(
@@ -121,8 +119,10 @@ describe('handleCreateVariableCollection', () => {
     });
 
     it('check is case-sensitive — different case creates new collection', async () => {
-      mockGetLocalVariables.mockResolvedValue(MOCK_GET_VARIABLES_RESPONSE);
-      mockPostVariables.mockResolvedValue(MOCK_POST_VARIABLES_RESPONSE);
+      mockGetLocalVariables
+        .mockResolvedValueOnce(MOCK_GET_VARIABLES_RESPONSE)
+        .mockResolvedValueOnce(createdVariablesResponse('brand colors', ['Mode 1']));
+      mockPostVariables.mockImplementation(async (_fileKey, _token, body) => postResponseFor(body));
 
       await handleCreateVariableCollection(
         { file_id: MOCK_FILE_KEY, name: 'brand colors' }, // lowercase
@@ -175,5 +175,62 @@ describe('handleCreateVariableCollection', () => {
         ),
       ).rejects.toMatchObject({ status: 429 });
     });
+
+    it('never fabricates IDs when Figma omits the collection mapping', async () => {
+      mockGetLocalVariables.mockResolvedValue(MOCK_EMPTY_VARIABLES_RESPONSE);
+      mockPostVariables.mockResolvedValue({ status: 200, error: false, meta: { tempIdToRealId: {} } });
+
+      await expect(
+        handleCreateVariableCollection(
+          { file_id: MOCK_FILE_KEY, name: 'New Collection' },
+          MOCK_TOKEN,
+        ),
+      ).rejects.toThrow(/did not return its server ID/i);
+    });
   });
 });
+
+function mockSuccessfulCreate(name: string, modes: string[]): void {
+  mockGetLocalVariables
+    .mockResolvedValueOnce(MOCK_EMPTY_VARIABLES_RESPONSE)
+    .mockResolvedValueOnce(createdVariablesResponse(name, modes));
+  mockPostVariables.mockImplementation(async (_fileKey, _token, body) => postResponseFor(body));
+}
+
+function postResponseFor(body: Parameters<typeof postVariables>[2]) {
+  const collection = body.variableCollections?.[0];
+  if (!collection?.id) throw new Error('Expected collection temporary ID');
+  return {
+    status: 200,
+    error: false,
+    meta: {
+      tempIdToRealId: {
+        [collection.id]: 'VariableCollectionId:new',
+        ...Object.fromEntries((body.variableModes ?? []).map((mode, index) => [
+          mode.id!,
+          `new-mode-${index}`,
+        ])),
+      },
+    },
+  };
+}
+
+function createdVariablesResponse(name: string, modes: string[]) {
+  return {
+    status: 200,
+    error: false,
+    meta: {
+      variableCollections: {
+        'VariableCollectionId:new': {
+          ...MOCK_COLLECTION,
+          id: 'VariableCollectionId:new',
+          name,
+          modes: modes.map((modeName, index) => ({ modeId: `new-mode-${index}`, name: modeName })),
+          defaultModeId: 'new-mode-0',
+          variableIds: [],
+        },
+      },
+      variables: {},
+    },
+  };
+}

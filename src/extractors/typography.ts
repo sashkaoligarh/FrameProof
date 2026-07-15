@@ -59,7 +59,17 @@ export function extractTypography(nodes: ParsedNode[]): TypographyToken[] {
     const characters: string = raw.characters ?? '';
     const sampleText = characters.slice(0, 50);
 
-    const key = `${fontFamily}-${fontSize}-${fontWeight}-${lineHeight}`;
+    const key = JSON.stringify([
+      fontFamily,
+      fontSize,
+      fontWeight,
+      fontStyle,
+      lineHeight,
+      letterSpacing,
+      textAlignHorizontal,
+      textCase,
+      textDecoration,
+    ]);
 
     const existing = accumulators.get(key);
     if (existing) {

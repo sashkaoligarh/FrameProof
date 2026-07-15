@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleSearchToken } from '../../../src/mcp/tools/search-token.js';
 import { TokenCache } from '../../../src/mcp/cache.js';
+import { generateCSS } from '../../../src/writers/css.js';
 import type { CacheEntry } from '../../../src/types/mcp.js';
 import type { FigmaFile, AllTokens } from '../../../src/types/tokens.js';
 
@@ -176,5 +177,106 @@ describe('handleSearchToken', () => {
     );
 
     expect(result.matches.length).toBeLessThanOrEqual(5);
+  });
+
+  it('returns writer-declared names for sanitized collisions and duplicate radii', async () => {
+    const entry = makeCacheEntry('file-collisions');
+    entry.tokens.colors[0].name = 'Brand/Primary';
+    entry.tokens.colors[1].name = 'Brand Primary';
+    entry.tokens.radii.push({ value: 8, is_per_corner: true, usage_count: 1 });
+    entry.tokens.shadows.push({
+      name: 'Card/Primary"; }\nbody { color: red',
+      node_id: '1:shadow',
+      shadow_type: 'DROP_SHADOW',
+      offset_x: 0,
+      offset_y: 4,
+      blur: 12,
+      spread: 2,
+      color_hex: '#00000033',
+      color_rgba: { r: 0, g: 0, b: 0, a: 0.2 },
+      css: '0px 4px 12px 2px rgba(0, 0, 0, 0.2)',
+    });
+    mockFetchFn.mockResolvedValue({ file: entry.file, nodes: entry.nodes, tokens: entry.tokens });
+    const css = generateCSS(entry.tokens);
+
+    const color = await handleSearchToken(
+      { file_id: entry.file_id, query: '#2563ec', category: 'color' },
+      cache,
+      mockFetchFn,
+    );
+    const radii = await handleSearchToken(
+      { file_id: entry.file_id, query: '8', category: 'radius' },
+      cache,
+      mockFetchFn,
+    );
+    const shadow = await handleSearchToken(
+      { file_id: entry.file_id, query: 'Card/Primary', category: 'shadow' },
+      cache,
+      mockFetchFn,
+    );
+
+    expect(color.matches[0].css_variable).toBe('--color-brand-primary-2');
+    expect(radii.matches.filter((match) => match.distance === 0).map(
+      (match) => match.css_variable,
+    )).toEqual(['--radius-8-uniform', '--radius-8-per-corner']);
+    expect(shadow.matches[0].css_variable).toBe('--card-primary-body-color-red');
+
+    for (const result of [color, radii, shadow]) {
+      for (const match of result.matches) {
+        expect(css).toContain(`${match.css_variable}:`);
+        expect(match.css_variable).toMatch(/^--[a-z0-9]+(?:-[a-z0-9]+)*$/);
+      }
+    }
+  });
+
+  it('searches shadows by CSS and geometry numbers', async () => {
+    const entry = makeCacheEntry('file-shadows');
+    entry.tokens.shadows.push(
+      {
+        name: 'shadow-small',
+        node_id: '1:shadow-small',
+        shadow_type: 'DROP_SHADOW',
+        offset_x: 0,
+        offset_y: 1,
+        blur: 2,
+        spread: 0,
+        color_hex: '#0000001a',
+        color_rgba: { r: 0, g: 0, b: 0, a: 0.1 },
+        css: '0px 1px 2px 0px rgba(0, 0, 0, 0.1)',
+      },
+      {
+        name: 'shadow-large',
+        node_id: '1:shadow-large',
+        shadow_type: 'DROP_SHADOW',
+        offset_x: 0,
+        offset_y: 6,
+        blur: 12,
+        spread: 0,
+        color_hex: '#00000033',
+        color_rgba: { r: 0, g: 0, b: 0, a: 0.2 },
+        css: '0px 6px 12px 0px rgba(0, 0, 0, 0.2)',
+      },
+    );
+    mockFetchFn.mockResolvedValue({ file: entry.file, nodes: entry.nodes, tokens: entry.tokens });
+
+    const byCss = await handleSearchToken(
+      { file_id: entry.file_id, query: '0px 1px 2px 0px rgba(0, 0, 0, 0.1)', category: 'shadow' },
+      cache,
+      mockFetchFn,
+    );
+    const byBlur = await handleSearchToken(
+      { file_id: entry.file_id, query: '12', category: 'shadow' },
+      cache,
+      mockFetchFn,
+    );
+
+    expect(byCss.matches[0]).toMatchObject({
+      css_variable: '--shadow-small',
+      distance: 0,
+    });
+    expect(byBlur.matches[0]).toMatchObject({
+      css_variable: '--shadow-large',
+      distance: 0,
+    });
   });
 });

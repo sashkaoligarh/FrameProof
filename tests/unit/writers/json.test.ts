@@ -452,6 +452,47 @@ describe('generateJSON — border-radius.json DTCG format', () => {
   });
 });
 
+describe('generateJSON — collision handling', () => {
+  it('retains typography tokens with the same generated name', () => {
+    const duplicateNameTokens: AllTokens = {
+      ...emptyTokens,
+      typography: [
+        fullTokens.typography[0],
+        {
+          ...fullTokens.typography[0],
+          node_id: '1:99',
+          line_height: '48px',
+          line_height_px: 48,
+        },
+      ],
+    };
+
+    const typography = JSON.parse(
+      generateJSON(duplicateNameTokens)['typography.json'],
+    ) as Record<string, { $value: { line_height: string } }>;
+
+    expect(Object.keys(typography)).toEqual(['heading-xl', 'heading-xl-2']);
+    expect(typography['heading-xl'].$value.line_height).toBe('40px');
+    expect(typography['heading-xl-2'].$value.line_height).toBe('48px');
+  });
+
+  it('retains uniform and per-corner radii with the same value', () => {
+    const duplicateValueTokens: AllTokens = {
+      ...emptyTokens,
+      radii: [
+        { value: 8, is_per_corner: false, usage_count: 2 },
+        { value: 8, is_per_corner: true, usage_count: 1 },
+      ],
+    };
+
+    const radii = JSON.parse(
+      generateJSON(duplicateValueTokens)['border-radius.json'],
+    ) as Record<string, unknown>;
+
+    expect(Object.keys(radii)).toEqual(['radius-8-uniform', 'radius-8-per-corner']);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Tests — shadows.json DTCG format
 // ---------------------------------------------------------------------------

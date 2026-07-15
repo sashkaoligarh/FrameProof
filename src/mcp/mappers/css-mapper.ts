@@ -1,10 +1,10 @@
 /**
- * CSS mapper — converts raw Figma nodes to NodeDetail with inline CSS variable mappings.
- * Matches node property values against cached tokens per research.md Decision 7.
+ * CSS mapper — converts raw Figma nodes to NodeDetail with generated CSS mappings.
+ * Matches node property values against cached observed values per research.md Decision 7.
  */
 
 import type { Node } from '@figma/rest-api-spec';
-import type { AllTokens, ColorToken, ShadowToken, StyleMeta, ComponentMeta } from '../../types/tokens.js';
+import type { AllTokens, StyleMeta, ComponentMeta } from '../../types/tokens.js';
 import type {
   NodeDetail,
   CSSMappedFill,
@@ -26,8 +26,20 @@ import {
   diamondGradientCSS,
 } from './gradient-css.js';
 import type { GradientHandlePositions, FigmaGradientStop } from './gradient-css.js';
+import {
+  allocateCssTokenNames,
+  cssVariableReference,
+  type CssTokenNames,
+} from '../../utils/css-token-names.js';
 
 const DEFAULT_DEPTH = 5;
+
+interface ParentGeometry {
+  canvas_x: number;
+  canvas_y: number;
+  has_canvas_position: boolean;
+  uses_auto_layout: boolean;
+}
 
 /** Optional file-level context for resolving shared styles and component names. */
 export interface FileContext {
@@ -46,7 +58,14 @@ export function mapNodeToDetail(
   maxDepth: number = DEFAULT_DEPTH,
   fileCtx?: FileContext,
 ): NodeDetail {
-  return buildNodeDetail(rawNode, tokens, 0, maxDepth, fileCtx);
+  return buildNodeDetail(
+    rawNode,
+    allocateCssTokenNames(tokens),
+    0,
+    maxDepth,
+    fileCtx,
+    undefined,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -55,10 +74,11 @@ export function mapNodeToDetail(
 
 function buildNodeDetail(
   raw: Node,
-  tokens: AllTokens,
+  cssTokens: CssTokenNames,
   currentDepth: number,
   maxDepth: number,
   fileCtx?: FileContext,
+  parentGeometry?: ParentGeometry,
 ): NodeDetail {
   const r = raw as Record<string, unknown>;
   const bbox = r.absoluteBoundingBox as
@@ -67,7 +87,7 @@ function buildNodeDetail(
 
   // --- Opacity (T012) ---
   const rawOpacity = r.opacity as number | undefined;
-  const opacityVal = rawOpacity !== undefined ? Math.min(1, Math.max(0, rawOpacity)) : undefined;
+  const opacityVal = rawOpacity !== undefined ? clampUnit(rawOpacity) : undefined;
 
   // --- Per-corner radii (T015) ---
   const rectCornerRadii = r.rectangleCornerRadii as [number, number, number, number] | undefined;
@@ -94,7 +114,23 @@ function buildNodeDetail(
 
   // --- Absolute positioning (T020) ---
   const layoutPositioning = r.layoutPositioning as string | undefined;
-  const position: 'absolute' | 'relative' = layoutPositioning === 'ABSOLUTE' ? 'absolute' : 'relative';
+  const position: 'absolute' | 'relative' =
+    layoutPositioning === 'ABSOLUTE' || (parentGeometry && !parentGeometry.uses_auto_layout)
+      ? 'absolute'
+      : 'relative';
+
+  // absoluteBoundingBox is canvas/global geometry. relativeTransform translation is
+  // the node origin in its immediate parent's coordinate space.
+  const canvasX = bbox?.x ?? 0;
+  const canvasY = bbox?.y ?? 0;
+  const parentRelative = mapParentRelativePosition(
+    r,
+    canvasX,
+    canvasY,
+    bbox !== undefined,
+    parentGeometry,
+  );
+  const usesAutoLayout = isAutoLayout(r);
 
   // --- Constraints ---
   const constraints = mapConstraints(r);
@@ -114,24 +150,34 @@ function buildNodeDetail(
     node_type: raw.type,
     width: bbox?.width ?? 0,
     height: bbox?.height ?? 0,
-    x: bbox?.x ?? 0,
-    y: bbox?.y ?? 0,
+    canvas_x: canvasX,
+    canvas_y: canvasY,
+    parent_relative_x: parentRelative?.x ?? null,
+    parent_relative_y: parentRelative?.y ?? null,
+    // Deprecated compatibility aliases. These remain canvas coordinates.
+    x: canvasX,
+    y: canvasY,
     visible: r.visible !== false,
-    fills: mapFills(r, tokens),
-    strokes: mapStrokes(r, tokens),
-    effects: mapEffects(r, tokens),
-    corner_radius: mapCornerRadius(r, tokens),
+    fills: mapFills(r, cssTokens),
+    strokes: mapStrokes(r, cssTokens),
+    effects: mapEffects(r, cssTokens),
+    corner_radius: mapCornerRadius(r, cssTokens),
     corner_radii: cornerRadii,
     rotation,
     blend_mode,
     blend_mode_css,
     overflow,
     position,
-    layout: mapLayout(r, tokens),
-    typography: mapTypography(r, tokens),
+    layout: mapLayout(r, cssTokens),
+    typography: mapTypography(r, cssTokens),
     text_content: raw.type === 'TEXT' ? ((r.characters as string) ?? null) : null,
-    text_segments: mapTextSegments(r, tokens),
-    children: mapChildren(r, tokens, currentDepth, maxDepth, fileCtx),
+    text_segments: mapTextSegments(r, cssTokens),
+    children: mapChildren(r, cssTokens, currentDepth, maxDepth, fileCtx, {
+      canvas_x: canvasX,
+      canvas_y: canvasY,
+      has_canvas_position: bbox !== undefined,
+      uses_auto_layout: usesAutoLayout,
+    }),
     component_info: mapComponentInfo(r, fileCtx),
   };
 
@@ -157,7 +203,7 @@ function buildNodeDetail(
   }
 
   // Token hints (non-standard values)
-  const hints = collectTokenHints(detail, tokens);
+  const hints = collectTokenHints(detail, cssTokens);
   if (hints.length > 0) {
     detail.token_hints = hints;
   }
@@ -167,7 +213,7 @@ function buildNodeDetail(
 
 // ─── Fills ──────────────────────────────────────────────
 
-function mapFills(r: Record<string, unknown>, tokens: AllTokens): CSSMappedFill[] {
+function mapFills(r: Record<string, unknown>, cssTokens: CssTokenNames): CSSMappedFill[] {
   const fills = r.fills as Array<Record<string, unknown>> | undefined;
   if (!fills || !Array.isArray(fills)) return [];
 
@@ -179,16 +225,17 @@ function mapFills(r: Record<string, unknown>, tokens: AllTokens): CSSMappedFill[
       // --- SOLID fills ---
       if (type === 'SOLID') {
         const color = f.color as { r: number; g: number; b: number; a: number };
-        const hex = rgbaToHex(color.r, color.g, color.b);
-        const matched = matchColor(hex, tokens.colors);
+        const alpha = combinedPaintAlpha(color.a, f.opacity);
+        const hex = rgbaToHex(color.r, color.g, color.b, alpha);
+        const matched = matchColor(hex, cssTokens.colors);
 
         return {
           fill_type: 'solid',
           value_hex: hex,
-          opacity: color.a ?? 1,
-          css_variable: matched ? `var(--color-${matched.name})` : null,
+          opacity: alpha,
+          css_variable: matched ? cssVariableReference(matched.name) : null,
           css_property: 'background-color',
-          css_value: null,
+          css_value: rgbaToCSS(color.r, color.g, color.b, alpha),
           gradient_type: null,
           image_ref: null,
           scale_mode: null,
@@ -199,7 +246,8 @@ function mapFills(r: Record<string, unknown>, tokens: AllTokens): CSSMappedFill[
       // --- GRADIENT fills (T010) ---
       if (type.startsWith('GRADIENT_')) {
         const handles = parseGradientHandles(f);
-        const stops = parseGradientStops(f);
+        const paintOpacity = clampUnit(f.opacity);
+        const stops = parseGradientStops(f, paintOpacity);
         const gradientSubtype = type.replace('GRADIENT_', '') as 'LINEAR' | 'RADIAL' | 'ANGULAR' | 'DIAMOND';
 
         let cssValue: string;
@@ -221,7 +269,7 @@ function mapFills(r: Record<string, unknown>, tokens: AllTokens): CSSMappedFill[
         return {
           fill_type: 'gradient',
           value_hex: null,
-          opacity: 1,
+          opacity: paintOpacity,
           css_variable: null,
           css_property: 'background',
           css_value: cssValue,
@@ -236,6 +284,7 @@ function mapFills(r: Record<string, unknown>, tokens: AllTokens): CSSMappedFill[
       if (type === 'IMAGE') {
         const imageRef = (f.imageRef as string) || null;
         const scaleMode = (f.scaleMode as string) ?? 'FILL';
+        const paintOpacity = clampUnit(f.opacity);
 
         const scaleModeMap: Record<string, string> = {
           FILL: 'cover',
@@ -247,7 +296,7 @@ function mapFills(r: Record<string, unknown>, tokens: AllTokens): CSSMappedFill[
         return {
           fill_type: 'image',
           value_hex: null,
-          opacity: 1,
+          opacity: paintOpacity,
           css_variable: null,
           css_property: 'background-image',
           css_value: imageRef ? `url(${imageRef})` : null,
@@ -274,14 +323,23 @@ function parseGradientHandles(f: Record<string, unknown>): GradientHandlePositio
 }
 
 /** Parse Figma gradientStops into our typed struct. */
-function parseGradientStops(f: Record<string, unknown>): FigmaGradientStop[] {
+function parseGradientStops(
+  f: Record<string, unknown>,
+  paintOpacity: number,
+): FigmaGradientStop[] {
   const stops = f.gradientStops as Array<{ position: number; color: { r: number; g: number; b: number; a: number } }> | undefined;
-  return stops ?? [];
+  return (stops ?? []).map((stop) => ({
+    ...stop,
+    color: {
+      ...stop.color,
+      a: combinedPaintAlpha(stop.color.a, paintOpacity),
+    },
+  }));
 }
 
 // ─── Strokes ────────────────────────────────────────────
 
-function mapStrokes(r: Record<string, unknown>, tokens: AllTokens): CSSMappedStroke[] {
+function mapStrokes(r: Record<string, unknown>, cssTokens: CssTokenNames): CSSMappedStroke[] {
   const strokes = r.strokes as Array<Record<string, unknown>> | undefined;
   if (!strokes || !Array.isArray(strokes)) return [];
 
@@ -293,8 +351,9 @@ function mapStrokes(r: Record<string, unknown>, tokens: AllTokens): CSSMappedStr
     .filter((s) => s.type === 'SOLID' && s.visible !== false)
     .map((s) => {
       const color = s.color as { r: number; g: number; b: number; a: number };
-      const hex = rgbaToHex(color.r, color.g, color.b);
-      const matched = matchColor(hex, tokens.colors);
+      const alpha = combinedPaintAlpha(color.a, s.opacity);
+      const hex = rgbaToHex(color.r, color.g, color.b, alpha);
+      const matched = matchColor(hex, cssTokens.colors);
 
       const alignment = strokeAlign as 'INSIDE' | 'OUTSIDE' | 'CENTER';
       let alignmentCss = 'border';
@@ -303,9 +362,11 @@ function mapStrokes(r: Record<string, unknown>, tokens: AllTokens): CSSMappedStr
 
       return {
         value_hex: hex,
+        opacity: alpha,
         weight: strokeWeight,
-        css_variable: matched ? `var(--color-${matched.name})` : null,
+        css_variable: matched ? cssVariableReference(matched.name) : null,
         css_property: 'border-color',
+        css_value: rgbaToCSS(color.r, color.g, color.b, alpha),
         alignment,
         alignment_css: alignmentCss,
         dash_pattern: dashPattern && dashPattern.length > 0 ? dashPattern : null,
@@ -315,7 +376,7 @@ function mapStrokes(r: Record<string, unknown>, tokens: AllTokens): CSSMappedStr
 
 // ─── Effects ────────────────────────────────────────────
 
-function mapEffects(r: Record<string, unknown>, tokens: AllTokens): CSSMappedEffect[] {
+function mapEffects(r: Record<string, unknown>, cssTokens: CssTokenNames): CSSMappedEffect[] {
   const effects = r.effects as Array<Record<string, unknown>> | undefined;
   if (!effects || !Array.isArray(effects)) return [];
 
@@ -324,7 +385,7 @@ function mapEffects(r: Record<string, unknown>, tokens: AllTokens): CSSMappedEff
     .map((e) => {
       const effectType = e.type as string;
       const cssValue = buildEffectCSS(e);
-      const matched = matchShadow(e, tokens.shadows);
+      const matched = matchShadow(e, cssTokens.shadows);
 
       let cssProperty: string;
       if (effectType === 'BACKGROUND_BLUR') {
@@ -340,7 +401,7 @@ function mapEffects(r: Record<string, unknown>, tokens: AllTokens): CSSMappedEff
       return {
         effect_type: effectType,
         css_value: cssValue,
-        css_variable: matched ? `var(--${matched.name})` : null,
+        css_variable: matched ? cssVariableReference(matched.name) : null,
         css_property: cssProperty,
       };
     });
@@ -374,23 +435,25 @@ function buildEffectCSS(e: Record<string, unknown>): string {
 
 function mapCornerRadius(
   r: Record<string, unknown>,
-  tokens: AllTokens,
+  cssTokens: CssTokenNames,
 ): CSSMappedValue | null {
   const radius = r.cornerRadius as number | undefined;
   if (radius === undefined || radius === 0) return null;
 
-  const matched = tokens.radii.find((t) => t.value === radius);
+  const matched = cssTokens.radii.find(
+    (entry) => entry.token.value === radius && !entry.token.is_per_corner,
+  ) ?? cssTokens.radii.find((entry) => entry.token.value === radius);
 
   return {
     value: radius,
-    css_variable: matched ? `var(--radius-${matched.value})` : null,
+    css_variable: matched ? cssVariableReference(matched.name) : null,
     css_property: 'border-radius',
   };
 }
 
 // ─── Layout ─────────────────────────────────────────────
 
-function mapLayout(r: Record<string, unknown>, tokens: AllTokens): LayoutInfo | null {
+function mapLayout(r: Record<string, unknown>, cssTokens: CssTokenNames): LayoutInfo | null {
   const layoutMode = r.layoutMode as string | undefined;
   if (!layoutMode || layoutMode === 'NONE') return null;
 
@@ -413,13 +476,13 @@ function mapLayout(r: Record<string, unknown>, tokens: AllTokens): LayoutInfo | 
       left: paddingLeft,
     },
     padding_css: [
-      mapSpacingValue(paddingTop, 'padding-top', tokens),
-      mapSpacingValue(paddingRight, 'padding-right', tokens),
-      mapSpacingValue(paddingBottom, 'padding-bottom', tokens),
-      mapSpacingValue(paddingLeft, 'padding-left', tokens),
+      mapSpacingValue(paddingTop, 'padding-top', cssTokens),
+      mapSpacingValue(paddingRight, 'padding-right', cssTokens),
+      mapSpacingValue(paddingBottom, 'padding-bottom', cssTokens),
+      mapSpacingValue(paddingLeft, 'padding-left', cssTokens),
     ],
     item_spacing: itemSpacing,
-    item_spacing_css: matchSpacingCSS(itemSpacing, tokens),
+    item_spacing_css: matchSpacingCSS(itemSpacing, cssTokens),
     counter_axis_spacing: counterAxisSpacing ?? null,
     primary_axis_align: (r.primaryAxisAlignItems as string) ?? 'MIN',
     counter_axis_align: (r.counterAxisAlignItems as string) ?? 'MIN',
@@ -432,26 +495,26 @@ function mapLayout(r: Record<string, unknown>, tokens: AllTokens): LayoutInfo | 
 function mapSpacingValue(
   value: number,
   cssProperty: string,
-  tokens: AllTokens,
+  cssTokens: CssTokenNames,
 ): CSSMappedValue {
-  const matched = tokens.spacing.find((s) => s.value === value);
+  const matched = cssTokens.spacing.find((entry) => entry.token.value === value);
   return {
     value,
-    css_variable: matched ? `var(--spacing-${matched.value})` : null,
+    css_variable: matched ? cssVariableReference(matched.name) : null,
     css_property: cssProperty,
   };
 }
 
-function matchSpacingCSS(value: number, tokens: AllTokens): string | null {
-  const matched = tokens.spacing.find((s) => s.value === value);
-  return matched ? `var(--spacing-${matched.value})` : null;
+function matchSpacingCSS(value: number, cssTokens: CssTokenNames): string | null {
+  const matched = cssTokens.spacing.find((entry) => entry.token.value === value);
+  return matched ? cssVariableReference(matched.name) : null;
 }
 
 // ─── Typography ─────────────────────────────────────────
 
 function mapTypography(
   r: Record<string, unknown>,
-  tokens: AllTokens,
+  cssTokens: CssTokenNames,
 ): CSSMappedTypography | null {
   if ((r.type as string) !== 'TEXT') return null;
 
@@ -467,17 +530,12 @@ function mapTypography(
   const textCase = (style.textCase as string) ?? 'ORIGINAL';
   const textDecoration = (style.textDecoration as string) ?? 'NONE';
 
-  // Match font family against typography tokens
-  const familySlug = fontFamily.toLowerCase().replace(/\s+/g, '-');
-  const hasFamily = tokens.typography.some(
-    (t) => t.font_family.toLowerCase() === fontFamily.toLowerCase(),
-  );
-
-  // Match font size against typography tokens
-  const hasSize = tokens.typography.some((t) => t.font_size === fontSize);
-
-  // Match font weight against typography tokens
-  const hasWeight = tokens.typography.some((t) => t.font_weight === fontWeight);
+  const familyToken = cssTokens.fontFamilies.find((entry) => entry.value === fontFamily)
+    ?? cssTokens.fontFamilies.find(
+      (entry) => entry.value.toLowerCase() === fontFamily.toLowerCase(),
+    );
+  const sizeToken = cssTokens.fontSizes.find((entry) => entry.value === fontSize);
+  const weightToken = cssTokens.fontWeights.find((entry) => entry.value === fontWeight);
 
   // Get text color from fills
   const fills = r.fills as Array<Record<string, unknown>> | undefined;
@@ -487,9 +545,9 @@ function mapTypography(
     const firstFill = fills[0];
     if (firstFill.type === 'SOLID' && firstFill.visible !== false) {
       const c = firstFill.color as { r: number; g: number; b: number; a: number };
-      colorHex = rgbaToHex(c.r, c.g, c.b);
-      const matched = matchColor(colorHex, tokens.colors);
-      colorCss = matched ? `var(--color-${matched.name})` : null;
+      colorHex = rgbaToHex(c.r, c.g, c.b, combinedPaintAlpha(c.a, firstFill.opacity));
+      const matched = matchColor(colorHex, cssTokens.colors);
+      colorCss = matched ? cssVariableReference(matched.name) : null;
     }
   }
 
@@ -503,11 +561,11 @@ function mapTypography(
 
   return {
     font_family: fontFamily,
-    font_family_css: hasFamily ? `var(--font-family-${familySlug})` : null,
+    font_family_css: familyToken ? cssVariableReference(familyToken.name) : null,
     font_size: fontSize,
-    font_size_css: hasSize ? `var(--font-size-${fontSize})` : null,
+    font_size_css: sizeToken ? cssVariableReference(sizeToken.name) : null,
     font_weight: fontWeight,
-    font_weight_css: hasWeight ? `var(--font-weight-${fontWeight})` : null,
+    font_weight_css: weightToken ? cssVariableReference(weightToken.name) : null,
     line_height: lineHeightPx ? `${lineHeightPx}px` : 'normal',
     line_height_em: lineHeightEm,
     letter_spacing: letterSpacing,
@@ -529,7 +587,7 @@ function mapTypography(
  */
 function mapTextSegments(
   r: Record<string, unknown>,
-  tokens: AllTokens,
+  cssTokens: CssTokenNames,
 ): TextSegment[] | null {
   if ((r.type as string) !== 'TEXT') return null;
 
@@ -568,8 +626,10 @@ function mapTextSegments(
 
       const overrideFills = override?.fills as Array<Record<string, unknown>> | undefined;
       const segColor = overrideFills ? getColorFromFills(overrideFills) : defaultColor;
-      const hex = segColor ? rgbaToHex(segColor.r, segColor.g, segColor.b) : '#000000';
-      const matched = matchColor(hex, tokens.colors);
+      const hex = segColor
+        ? rgbaToHex(segColor.r, segColor.g, segColor.b, segColor.a)
+        : '#000000';
+      const matched = matchColor(hex, cssTokens.colors);
 
       const segFontFamily = (override?.fontFamily as string) ?? defaultFontFamily;
       const segFontSize = (override?.fontSize as number) ?? defaultFontSize;
@@ -580,7 +640,7 @@ function mapTextSegments(
         start: segStart,
         end: i,
         color_hex: hex,
-        color_css: matched ? `var(--color-${matched.name})` : null,
+        color_css: matched ? cssVariableReference(matched.name) : null,
         font_family: segFontFamily,
         font_size: segFontSize,
         font_weight: segFontWeight,
@@ -601,17 +661,19 @@ function getColorFromFills(
   if (!fills || fills.length === 0) return null;
   const first = fills.find((f) => f.type === 'SOLID' && f.visible !== false);
   if (!first) return null;
-  return first.color as { r: number; g: number; b: number; a: number };
+  const color = first.color as { r: number; g: number; b: number; a: number };
+  return { ...color, a: combinedPaintAlpha(color.a, first.opacity) };
 }
 
 // ─── Children ───────────────────────────────────────────
 
 function mapChildren(
   r: Record<string, unknown>,
-  tokens: AllTokens,
+  cssTokens: CssTokenNames,
   currentDepth: number,
   maxDepth: number,
   fileCtx?: FileContext,
+  parentGeometry?: ParentGeometry,
 ): NodeDetail[] {
   if (currentDepth >= maxDepth) return [];
 
@@ -619,8 +681,43 @@ function mapChildren(
   if (!children || !Array.isArray(children)) return [];
 
   return children.map((child) =>
-    buildNodeDetail(child, tokens, currentDepth + 1, maxDepth, fileCtx),
+    buildNodeDetail(child, cssTokens, currentDepth + 1, maxDepth, fileCtx, parentGeometry),
   );
+}
+
+function isAutoLayout(r: Record<string, unknown>): boolean {
+  const layoutMode = r.layoutMode as string | undefined;
+  return layoutMode !== undefined && layoutMode !== 'NONE';
+}
+
+function mapParentRelativePosition(
+  r: Record<string, unknown>,
+  canvasX: number,
+  canvasY: number,
+  hasCanvasPosition: boolean,
+  parentGeometry?: ParentGeometry,
+): { x: number; y: number } | null {
+  if (!parentGeometry) return null;
+
+  const transform = r.relativeTransform as unknown;
+  if (
+    Array.isArray(transform) &&
+    Array.isArray(transform[0]) &&
+    Array.isArray(transform[1]) &&
+    typeof transform[0][2] === 'number' &&
+    Number.isFinite(transform[0][2]) &&
+    typeof transform[1][2] === 'number' &&
+    Number.isFinite(transform[1][2])
+  ) {
+    return { x: transform[0][2], y: transform[1][2] };
+  }
+
+  return hasCanvasPosition && parentGeometry.has_canvas_position
+    ? {
+        x: canvasX - parentGeometry.canvas_x,
+        y: canvasY - parentGeometry.canvas_y,
+      }
+    : null;
 }
 
 // ─── Component Info ─────────────────────────────────────
@@ -699,15 +796,18 @@ function mapBlendMode(rawBlendMode: string | undefined): {
 
 // ─── Color Matching ─────────────────────────────────────
 
-function matchColor(hex: string, colors: ColorToken[]): ColorToken | null {
+function matchColor(
+  hex: string,
+  colors: CssTokenNames['colors'],
+): CssTokenNames['colors'][number] | null {
   const normalized = hex.toLowerCase();
-  return colors.find((c) => c.value_hex.toLowerCase() === normalized) ?? null;
+  return colors.find((entry) => entry.token.value_hex.toLowerCase() === normalized) ?? null;
 }
 
 function matchShadow(
   effect: Record<string, unknown>,
-  shadows: ShadowToken[],
-): ShadowToken | null {
+  shadows: CssTokenNames['shadows'],
+): CssTokenNames['shadows'][number] | null {
   const type = effect.type as string;
   if (type !== 'DROP_SHADOW' && type !== 'INNER_SHADOW') return null;
 
@@ -720,12 +820,12 @@ function matchShadow(
 
   return (
     shadows.find(
-      (s) =>
-        s.shadow_type === type &&
-        s.offset_x === x &&
-        s.offset_y === y &&
-        s.blur === radius &&
-        s.spread === spread,
+      (entry) =>
+        entry.token.shadow_type === type &&
+        entry.token.offset_x === x &&
+        entry.token.offset_y === y &&
+        entry.token.blur === radius &&
+        entry.token.spread === spread,
     ) ?? null
   );
 }
@@ -734,12 +834,30 @@ function matchShadow(
  * Convert Figma's 0-1 float RGBA to hex string.
  * Figma API returns r,g,b as 0-1 floats.
  */
-function rgbaToHex(r: number, g: number, b: number): string {
+function rgbaToHex(r: number, g: number, b: number, a: number = 1): string {
   const toHex = (v: number) =>
-    Math.round(v * 255)
+    Math.round(clampUnit(v) * 255)
       .toString(16)
       .padStart(2, '0');
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  const rgb = `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  return a < 1 ? `${rgb}${toHex(a)}` : rgb;
+}
+
+function rgbaToCSS(r: number, g: number, b: number, a: number): string {
+  if (a >= 1) return rgbaToHex(r, g, b);
+
+  const channel = (value: number) => Math.round(clampUnit(value) * 255);
+  const alpha = Math.round(a * 10000) / 10000;
+  return `rgba(${channel(r)}, ${channel(g)}, ${channel(b)}, ${alpha})`;
+}
+
+function combinedPaintAlpha(colorAlpha: number | undefined, paintOpacity: unknown): number {
+  return clampUnit(colorAlpha) * clampUnit(paintOpacity);
+}
+
+function clampUnit(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1;
+  return Math.min(1, Math.max(0, value));
 }
 
 // ─── Constraints ────────────────────────────────────────
@@ -801,9 +919,9 @@ function mapAppliedStyles(r: Record<string, unknown>, fileCtx?: FileContext): Ap
   return hasAny ? result : null;
 }
 
-// ─── Token Hints (non-standard values) ─────────────────
+// ─── Nearest observed-value hints ───────────────────────
 
-function collectTokenHints(detail: NodeDetail, tokens: AllTokens): TokenHint[] {
+function collectTokenHints(detail: NodeDetail, cssTokens: CssTokenNames): TokenHint[] {
   const hints: TokenHint[] = [];
 
   // Check padding values against spacing tokens
@@ -811,12 +929,12 @@ function collectTokenHints(detail: NodeDetail, tokens: AllTokens): TokenHint[] {
     const { padding } = detail.layout;
     for (const [side, value] of Object.entries(padding)) {
       if (value === 0) continue;
-      const nearest = findNearestSpacing(value, tokens);
+      const nearest = findNearestSpacing(value, cssTokens);
       if (nearest && nearest.delta !== 0) {
         hints.push({
           property: `padding-${side}`,
           actual_value: value,
-          nearest_token: `var(--spacing-${nearest.value})`,
+          nearest_token: cssVariableReference(nearest.name),
           nearest_value: nearest.value,
           delta: nearest.delta,
         });
@@ -825,12 +943,12 @@ function collectTokenHints(detail: NodeDetail, tokens: AllTokens): TokenHint[] {
 
     // Check item_spacing
     if (detail.layout.item_spacing > 0) {
-      const nearest = findNearestSpacing(detail.layout.item_spacing, tokens);
+      const nearest = findNearestSpacing(detail.layout.item_spacing, cssTokens);
       if (nearest && nearest.delta !== 0) {
         hints.push({
           property: 'gap',
           actual_value: detail.layout.item_spacing,
-          nearest_token: `var(--spacing-${nearest.value})`,
+          nearest_token: cssVariableReference(nearest.name),
           nearest_value: nearest.value,
           delta: nearest.delta,
         });
@@ -840,12 +958,12 @@ function collectTokenHints(detail: NodeDetail, tokens: AllTokens): TokenHint[] {
 
   // Check corner radius
   if (detail.corner_radius && !detail.corner_radius.css_variable) {
-    const nearest = findNearestRadius(detail.corner_radius.value, tokens);
+    const nearest = findNearestRadius(detail.corner_radius.value, cssTokens);
     if (nearest && nearest.delta !== 0) {
       hints.push({
         property: 'border-radius',
         actual_value: detail.corner_radius.value,
-        nearest_token: `var(--radius-${nearest.value})`,
+        nearest_token: cssVariableReference(nearest.name),
         nearest_value: nearest.value,
         delta: nearest.delta,
       });
@@ -855,12 +973,12 @@ function collectTokenHints(detail: NodeDetail, tokens: AllTokens): TokenHint[] {
   // Check fill colors against color tokens
   for (const fill of detail.fills) {
     if (fill.fill_type === 'solid' && fill.value_hex && !fill.css_variable) {
-      const nearest = findNearestColor(fill.value_hex, tokens);
+      const nearest = findNearestColor(fill.value_hex, cssTokens);
       if (nearest && nearest.distance > 0 && nearest.distance < 30) {
         hints.push({
           property: 'color',
           actual_value: fill.value_hex,
-          nearest_token: `var(--color-${nearest.name})`,
+          nearest_token: cssVariableReference(nearest.name),
           nearest_value: nearest.hex,
           delta: Math.round(nearest.distance),
         });
@@ -870,12 +988,12 @@ function collectTokenHints(detail: NodeDetail, tokens: AllTokens): TokenHint[] {
 
   // Check font size
   if (detail.typography && !detail.typography.font_size_css) {
-    const nearest = findNearestFontSize(detail.typography.font_size, tokens);
+    const nearest = findNearestFontSize(detail.typography.font_size, cssTokens);
     if (nearest && nearest.delta !== 0) {
       hints.push({
         property: 'font-size',
         actual_value: detail.typography.font_size,
-        nearest_token: `var(--font-size-${nearest.value})`,
+        nearest_token: cssVariableReference(nearest.name),
         nearest_value: nearest.value,
         delta: nearest.delta,
       });
@@ -885,68 +1003,82 @@ function collectTokenHints(detail: NodeDetail, tokens: AllTokens): TokenHint[] {
   return hints;
 }
 
-function findNearestSpacing(value: number, tokens: AllTokens): { value: number; delta: number } | null {
-  if (tokens.spacing.length === 0) return null;
-  let best = tokens.spacing[0];
-  let bestDelta = Math.abs(best.value - value);
-  for (const s of tokens.spacing) {
-    const d = Math.abs(s.value - value);
+function findNearestSpacing(
+  value: number,
+  cssTokens: CssTokenNames,
+): { value: number; name: string; delta: number } | null {
+  if (cssTokens.spacing.length === 0) return null;
+  let best = cssTokens.spacing[0];
+  let bestDelta = Math.abs(best.token.value - value);
+  for (const spacing of cssTokens.spacing) {
+    const d = Math.abs(spacing.token.value - value);
     if (d < bestDelta) {
-      best = s;
+      best = spacing;
       bestDelta = d;
     }
   }
   // Exact match means the css_variable was already set
   if (bestDelta === 0) return null;
-  return { value: best.value, delta: value - best.value };
+  return { value: best.token.value, name: best.name, delta: value - best.token.value };
 }
 
-function findNearestRadius(value: number, tokens: AllTokens): { value: number; delta: number } | null {
-  if (tokens.radii.length === 0) return null;
-  let best = tokens.radii[0];
-  let bestDelta = Math.abs(best.value - value);
-  for (const r of tokens.radii) {
-    const d = Math.abs(r.value - value);
+function findNearestRadius(
+  value: number,
+  cssTokens: CssTokenNames,
+): { value: number; name: string; delta: number } | null {
+  const uniform = cssTokens.radii.filter((entry) => !entry.token.is_per_corner);
+  const candidates = uniform.length > 0 ? uniform : cssTokens.radii;
+  if (candidates.length === 0) return null;
+  let best = candidates[0];
+  let bestDelta = Math.abs(best.token.value - value);
+  for (const radius of candidates) {
+    const d = Math.abs(radius.token.value - value);
     if (d < bestDelta) {
-      best = r;
+      best = radius;
       bestDelta = d;
     }
   }
   if (bestDelta === 0) return null;
-  return { value: best.value, delta: value - best.value };
+  return { value: best.token.value, name: best.name, delta: value - best.token.value };
 }
 
-function findNearestColor(hex: string, tokens: AllTokens): { name: string; hex: string; distance: number } | null {
-  if (tokens.colors.length === 0) return null;
+function findNearestColor(
+  hex: string,
+  cssTokens: CssTokenNames,
+): { name: string; hex: string; distance: number } | null {
+  if (cssTokens.colors.length === 0) return null;
   const [qr, qg, qb] = hexToRgbInts(hex);
   let bestName = '';
   let bestHex = '';
   let bestDist = Infinity;
-  for (const c of tokens.colors) {
-    const [cr, cg, cb] = hexToRgbInts(c.value_hex);
+  for (const color of cssTokens.colors) {
+    const [cr, cg, cb] = hexToRgbInts(color.token.value_hex);
     const d = Math.sqrt((qr - cr) ** 2 + (qg - cg) ** 2 + (qb - cb) ** 2);
     if (d < bestDist) {
       bestDist = d;
-      bestName = c.name;
-      bestHex = c.value_hex;
+      bestName = color.name;
+      bestHex = color.token.value_hex;
     }
   }
   return { name: bestName, hex: bestHex, distance: bestDist };
 }
 
-function findNearestFontSize(value: number, tokens: AllTokens): { value: number; delta: number } | null {
-  if (tokens.typography.length === 0) return null;
-  let bestSize = tokens.typography[0].font_size;
-  let bestDelta = Math.abs(bestSize - value);
-  for (const t of tokens.typography) {
-    const d = Math.abs(t.font_size - value);
+function findNearestFontSize(
+  value: number,
+  cssTokens: CssTokenNames,
+): { value: number; name: string; delta: number } | null {
+  if (cssTokens.fontSizes.length === 0) return null;
+  let best = cssTokens.fontSizes[0];
+  let bestDelta = Math.abs(best.value - value);
+  for (const size of cssTokens.fontSizes) {
+    const d = Math.abs(size.value - value);
     if (d < bestDelta) {
-      bestSize = t.font_size;
+      best = size;
       bestDelta = d;
     }
   }
   if (bestDelta === 0) return null;
-  return { value: bestSize, delta: value - bestSize };
+  return { value: best.value, name: best.name, delta: value - best.value };
 }
 
 function hexToRgbInts(hex: string): [number, number, number] {

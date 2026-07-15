@@ -13,6 +13,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { mapNodeToDetail } from '../../../src/mcp/mappers/css-mapper.js';
+import { generateCSS } from '../../../src/writers/css.js';
 import type { AllTokens } from '../../../src/types/tokens.js';
 import type { Node } from '@figma/rest-api-spec';
 
@@ -369,6 +370,79 @@ describe('mapNodeToDetail — shadow match', () => {
   });
 });
 
+describe('mapNodeToDetail — generated CSS token names', () => {
+  it('only returns references declared by the writer after sanitization and collisions', () => {
+    const trickyTokens: AllTokens = {
+      ...emptyTokens,
+      colors: [
+        { ...tokens.colors[0], name: 'Brand/Primary' },
+        { ...tokens.colors[1], name: 'Brand Primary' },
+      ],
+      typography: [
+        { ...tokens.typography[0], font_family: 'Bad "Font/\nName' },
+        { ...tokens.typography[0], name: 'body', font_family: 'Bad Font Name' },
+      ],
+      spacing: [
+        { value: 8, source: 'padding', usage_count: 2 },
+        { value: 8, source: 'item_spacing', usage_count: 1 },
+      ],
+      radii: [
+        { value: 8, is_per_corner: false, usage_count: 2 },
+        { value: 8, is_per_corner: true, usage_count: 1 },
+      ],
+      shadows: [{
+        ...tokens.shadows[0],
+        name: 'color brand primary',
+      }],
+    };
+    const node = makeNode({
+      type: 'TEXT',
+      characters: 'Token names',
+      style: {
+        fontFamily: 'Bad Font Name',
+        fontSize: 32,
+        fontWeight: 700,
+      },
+      fills: [{
+        type: 'SOLID',
+        color: { r: 17 / 255, g: 24 / 255, b: 39 / 255, a: 1 },
+        visible: true,
+      }],
+      effects: [{
+        type: 'DROP_SHADOW',
+        visible: true,
+        offset: { x: 0, y: 1 },
+        radius: 2,
+        spread: 0,
+      }],
+      cornerRadius: 8,
+      layoutMode: 'HORIZONTAL',
+      paddingTop: 8,
+      paddingRight: 8,
+      paddingBottom: 8,
+      paddingLeft: 8,
+      itemSpacing: 8,
+    });
+
+    const detail = mapNodeToDetail(node, trickyTokens);
+    const css = generateCSS(trickyTokens);
+    const declarations = new Set(
+      [...css.matchAll(/--([a-z0-9-]+)\s*:/g)].map((match) => match[1]),
+    );
+    const references = [
+      ...JSON.stringify(detail).matchAll(/var\(--([a-z0-9-]+)\)/g),
+    ].map((match) => match[1]);
+
+    expect(detail.fills[0].css_variable).toBe('var(--color-brand-primary-2)');
+    expect(detail.typography?.font_family_css).toBe('var(--font-family-bad-font-name-2)');
+    expect(detail.corner_radius?.css_variable).toBe('var(--radius-8-uniform)');
+    expect(detail.effects[0].css_variable).toBe('var(--color-brand-primary-3)');
+    expect(css).toContain('--radius-8-per-corner: 8px;');
+    expect(references.length).toBeGreaterThan(0);
+    expect(references.every((name) => declarations.has(name))).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Tests — Depth limiting
 // ---------------------------------------------------------------------------
@@ -438,6 +512,11 @@ describe('mapNodeToDetail — basic properties', () => {
     expect(detail.node_type).toBe('FRAME');
     expect(detail.width).toBe(300);
     expect(detail.height).toBe(150);
+    expect(detail.canvas_x).toBe(10);
+    expect(detail.canvas_y).toBe(20);
+    expect(detail.parent_relative_x).toBeNull();
+    expect(detail.parent_relative_y).toBeNull();
+    // Deprecated aliases remain canvas/global coordinates.
     expect(detail.x).toBe(10);
     expect(detail.y).toBe(20);
     expect(detail.visible).toBe(true);
@@ -455,6 +534,97 @@ describe('mapNodeToDetail — basic properties', () => {
     expect(detail.fills).toEqual([]);
     expect(detail.strokes).toEqual([]);
     expect(detail.effects).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Nested geometry and layout participation
+// ---------------------------------------------------------------------------
+
+describe('mapNodeToDetail — nested geometry', () => {
+  it('exposes canvas and immediate-parent coordinates at every nested level', () => {
+    const node = makeNode({
+      id: 'root',
+      absoluteBoundingBox: { x: 100, y: 200, width: 500, height: 400 },
+      children: [
+        makeNode({
+          id: 'child',
+          absoluteBoundingBox: { x: 132, y: 245, width: 200, height: 100 },
+          relativeTransform: [[1, 0, 30], [0, 1, 40]],
+          children: [
+            makeNode({
+              id: 'grandchild',
+              absoluteBoundingBox: { x: 150, y: 260, width: 20, height: 10 },
+              relativeTransform: [[1, 0, 7], [0, 1, 9]],
+            }),
+          ],
+        }),
+      ],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    const child = detail.children[0];
+    const grandchild = child.children[0];
+
+    expect(detail.parent_relative_x).toBeNull();
+    expect(detail.parent_relative_y).toBeNull();
+    expect(child).toMatchObject({
+      canvas_x: 132,
+      canvas_y: 245,
+      parent_relative_x: 30,
+      parent_relative_y: 40,
+      x: 132,
+      y: 245,
+    });
+    expect(grandchild).toMatchObject({
+      canvas_x: 150,
+      canvas_y: 260,
+      parent_relative_x: 7,
+      parent_relative_y: 9,
+      x: 150,
+      y: 260,
+    });
+  });
+
+  it('falls back to bounding-box differences when relativeTransform is absent', () => {
+    const node = makeNode({
+      absoluteBoundingBox: { x: 80, y: 120, width: 300, height: 200 },
+      children: [
+        makeNode({
+          absoluteBoundingBox: { x: 95, y: 148, width: 50, height: 40 },
+        }),
+      ],
+    });
+
+    const child = mapNodeToDetail(node, emptyTokens).children[0];
+    expect(child.parent_relative_x).toBe(15);
+    expect(child.parent_relative_y).toBe(28);
+  });
+});
+
+describe('mapNodeToDetail — child layout participation', () => {
+  it('marks children of non-auto-layout frames as manually positioned', () => {
+    const node = makeNode({
+      layoutMode: 'NONE',
+      children: [makeNode({ layoutPositioning: 'AUTO' })],
+    });
+
+    const child = mapNodeToDetail(node, emptyTokens).children[0];
+    expect(child.position).toBe('absolute');
+  });
+
+  it('distinguishes auto-layout participants from absolute children', () => {
+    const node = makeNode({
+      layoutMode: 'HORIZONTAL',
+      children: [
+        makeNode({ id: 'flow-child', layoutPositioning: 'AUTO' }),
+        makeNode({ id: 'manual-child', layoutPositioning: 'ABSOLUTE' }),
+      ],
+    });
+
+    const [flowChild, manualChild] = mapNodeToDetail(node, emptyTokens).children;
+    expect(flowChild.position).toBe('relative');
+    expect(manualChild.position).toBe('absolute');
   });
 });
 
@@ -829,6 +999,76 @@ describe('mapNodeToDetail — element opacity', () => {
     const node = makeNode({ opacity: -0.5 });
     const detail = mapNodeToDetail(node, emptyTokens);
     expect(detail.opacity).toBe(0);
+  });
+});
+
+describe('mapNodeToDetail — paint opacity', () => {
+  it('combines solid fill opacity with color alpha but keeps node opacity separate', () => {
+    const node = makeNode({
+      opacity: 0.4,
+      fills: [
+        {
+          type: 'SOLID',
+          visible: true,
+          opacity: 0.5,
+          color: { r: 1, g: 0, b: 0, a: 0.5 },
+        },
+      ],
+    });
+
+    const detail = mapNodeToDetail(node, emptyTokens);
+    expect(detail.opacity).toBe(0.4);
+    expect(detail.fills[0]).toMatchObject({
+      opacity: 0.25,
+      value_hex: '#ff000040',
+      css_value: 'rgba(255, 0, 0, 0.25)',
+    });
+  });
+
+  it('combines stroke opacity with color alpha in exact CSS mapping', () => {
+    const node = makeNode({
+      strokes: [
+        {
+          type: 'SOLID',
+          visible: true,
+          opacity: 0.25,
+          color: { r: 0, g: 0, b: 1, a: 0.8 },
+        },
+      ],
+    });
+
+    const stroke = mapNodeToDetail(node, emptyTokens).strokes[0];
+    expect(stroke).toMatchObject({
+      opacity: 0.2,
+      value_hex: '#0000ff33',
+      css_value: 'rgba(0, 0, 255, 0.2)',
+    });
+  });
+
+  it('multiplies gradient paint opacity into every CSS stop alpha', () => {
+    const node = makeNode({
+      fills: [
+        {
+          type: 'GRADIENT_LINEAR',
+          visible: true,
+          opacity: 0.4,
+          gradientHandlePositions: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 0, y: 1 },
+          ],
+          gradientStops: [
+            { position: 0, color: { r: 1, g: 0, b: 0, a: 0.5 } },
+            { position: 1, color: { r: 0, g: 0, b: 1, a: 1 } },
+          ],
+        },
+      ],
+    });
+
+    const fill = mapNodeToDetail(node, emptyTokens).fills[0];
+    expect(fill.opacity).toBe(0.4);
+    expect(fill.css_value).toContain('rgba(255, 0, 0, 0.2) 0%');
+    expect(fill.css_value).toContain('rgba(0, 0, 255, 0.4) 100%');
   });
 });
 

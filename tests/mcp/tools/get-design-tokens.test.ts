@@ -14,6 +14,7 @@ import { handleGetDesignTokens } from '../../../src/mcp/tools/get-design-tokens.
 import { TokenCache } from '../../../src/mcp/cache.js';
 import type { CacheEntry } from '../../../src/types/mcp.js';
 import type { FigmaFile, AllTokens, ParsedNode } from '../../../src/types/tokens.js';
+import type { Node } from '@figma/rest-api-spec';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -95,6 +96,72 @@ function makeCacheEntry(
   };
 }
 
+function makeScopedCacheEntry(fileId: string): CacheEntry {
+  const component = {
+    id: '1:3',
+    name: 'Primary Button',
+    type: 'COMPONENT',
+    visible: true,
+    absoluteBoundingBox: { x: 0, y: 0, width: 120, height: 40 },
+    children: [],
+  } as unknown as Node;
+  const redFrame = {
+    id: '1:2',
+    name: 'Red Section',
+    type: 'FRAME',
+    visible: true,
+    fills: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0, a: 1 }, visible: true }],
+    styles: { fill: 'style-red' },
+    children: [component],
+  } as unknown as Node;
+  const blueFrame = {
+    id: '2:2',
+    name: 'Blue Section',
+    type: 'FRAME',
+    visible: true,
+    fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 1, a: 1 }, visible: true }],
+    styles: { fill: 'style-blue' },
+    children: [],
+  } as unknown as Node;
+  const pageA = {
+    id: '1:1',
+    name: 'Page A',
+    type: 'CANVAS',
+    children: [redFrame],
+  } as unknown as Node;
+  const pageB = {
+    id: '2:1',
+    name: 'Page B',
+    type: 'CANVAS',
+    children: [blueFrame],
+  } as unknown as Node;
+  const document = {
+    id: '0:1',
+    name: 'Document',
+    type: 'DOCUMENT',
+    children: [pageA, pageB],
+  } as unknown as Node;
+  const nodes: ParsedNode[] = [
+    { node_id: '0:1', node_type: 'DOCUMENT', name: 'Document', parent_id: null, depth: 0, raw: document },
+    { node_id: '1:1', node_type: 'CANVAS', name: 'Page A', parent_id: '0:1', depth: 1, raw: pageA },
+    { node_id: '1:2', node_type: 'FRAME', name: 'Red Section', parent_id: '1:1', depth: 2, raw: redFrame },
+    { node_id: '1:3', node_type: 'COMPONENT', name: 'Primary Button', parent_id: '1:2', depth: 3, raw: component },
+    { node_id: '2:1', node_type: 'CANVAS', name: 'Page B', parent_id: '0:1', depth: 1, raw: pageB },
+    { node_id: '2:2', node_type: 'FRAME', name: 'Blue Section', parent_id: '2:1', depth: 2, raw: blueFrame },
+  ];
+  const entry = makeCacheEntry(fileId, { nodes });
+
+  entry.file.document = document;
+  entry.file.styles = {
+    'style-red': { key: 'red', name: 'Brand/Red', style_type: 'FILL', description: '' },
+    'style-blue': { key: 'blue', name: 'Brand/Blue', style_type: 'FILL', description: '' },
+  };
+  entry.file.components = {
+    '1:3': { key: 'button', name: 'Primary Button', description: 'Reusable CTA' },
+  };
+  return entry;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -130,6 +197,63 @@ describe('handleGetDesignTokens', () => {
       expect(result.file_name).toBe('Test Design File');
       expect(result.node_count).toBe(1);
       expect(typeof result.cached).toBe('boolean');
+      expect(result.scope).toEqual({ type: 'file' });
+    });
+  });
+
+  describe('scoped extraction', () => {
+    it('re-extracts page tokens from only that page and preserves style metadata', async () => {
+      const entry = makeScopedCacheEntry('file-1');
+      mockFetchFn.mockResolvedValue({ file: entry.file, nodes: entry.nodes, tokens: entry.tokens });
+
+      const result = await handleGetDesignTokens(
+        { file_id: 'file-1', page: 'Page A', categories: ['colors'] },
+        cache,
+        mockFetchFn,
+      );
+
+      expect(result.scope).toEqual({ type: 'page', page: 'Page A', page_id: '1:1' });
+      expect(result.node_count).toBe(3);
+      expect(result.colors).toHaveLength(1);
+      expect(result.colors![0]).toMatchObject({ name: 'Brand/Red', value_hex: '#ff0000', usage_count: 1 });
+    });
+
+    it('scopes to a node subtree, preserves component metadata, and gives node_id precedence', async () => {
+      const entry = makeScopedCacheEntry('file-1');
+      mockFetchFn.mockResolvedValue({ file: entry.file, nodes: entry.nodes, tokens: entry.tokens });
+
+      const result = await handleGetDesignTokens(
+        {
+          file_id: 'file-1',
+          page: 'Missing Page',
+          node_id: '1-2',
+          categories: ['colors', 'components'],
+        },
+        cache,
+        mockFetchFn,
+      );
+
+      expect(result.scope).toEqual({ type: 'node', node_id: '1:2', node_name: 'Red Section' });
+      expect(result.node_count).toBe(2);
+      expect(result.colors!.map((token) => token.value_hex)).toEqual(['#ff0000']);
+      expect(result.components).toHaveLength(1);
+      expect(result.components![0]).toMatchObject({
+        node_id: '1:3',
+        name: 'Primary Button',
+        description: 'Reusable CTA',
+      });
+    });
+
+    it('returns actionable errors for missing pages and nodes', async () => {
+      const entry = makeScopedCacheEntry('file-1');
+      mockFetchFn.mockResolvedValue({ file: entry.file, nodes: entry.nodes, tokens: entry.tokens });
+
+      await expect(
+        handleGetDesignTokens({ file_id: 'file-1', page: 'Unknown' }, cache, mockFetchFn),
+      ).rejects.toThrow(/Available pages: Page A, Page B/);
+      await expect(
+        handleGetDesignTokens({ file_id: 'file-1', node_id: '99:99' }, cache, mockFetchFn),
+      ).rejects.toThrow(/get_document_structure/);
     });
   });
 

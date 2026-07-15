@@ -1,14 +1,35 @@
-dist/
+# Dependencies and generated builds
 node_modules/
+dist/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# Local configuration and credentials
 .env
 .env.*
+!.env.example
+.claude/settings.local.json
+
+# Generated Figma and visual-comparison artifacts
+.figma/
+.pixel-perfect/
+figma-output/
+figma-artifacts/
+artifacts/
+playwright-report/
+test-results/
+
+# Package and runtime output
 *.tgz
 *.log
-coverage/
-.DS_Store
-Thumbs.db
 *.tmp
 *.swp
-/specs
-# Figma MCP output (tokens, screenshots, analysis) — generated per-project
-.figma/
+.cache/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Local specification work products
+/specs/

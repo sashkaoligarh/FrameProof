@@ -1,14 +1,20 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { downloadImage, fetchFigmaImages } from '../api/client.js';
+import {
+  downloadImage,
+  fetchFigmaImages,
+  type ImageExportOptions,
+} from '../api/client.js';
 import { TokenCache, type FetchResult } from '../mcp/cache.js';
-import { handleGetNodeInfo } from '../mcp/tools/get-node-info.js';
-import { handleGetScreenshot } from '../mcp/tools/get-screenshot.js';
+import { mapNodeToDetail } from '../mcp/mappers/css-mapper.js';
+import { deduplicateStyles } from '../mcp/utils/style-dedup.js';
+import { collapseSvgGroups } from '../mcp/utils/svg-collapse.js';
 import { fetchAndParse, parseFileIdOrUrl } from '../pipeline/fetch.js';
 import { parseDocumentTree } from '../pipeline/parse.js';
 import { extractAllTokens } from '../pipeline/transform.js';
 import type { ParseContext } from '../types/tokens.js';
 import { resolveParams } from '../mcp/utils/normalize-node-id.js';
+import { assertValidPng } from './image.js';
 
 export interface FigmaReferenceResult {
   kind: 'figma-url' | 'image-file';
@@ -18,42 +24,67 @@ export interface FigmaReferenceResult {
   nodeId?: string;
 }
 
+export interface FigmaReferenceSession {
+  cache: TokenCache;
+  fetchFigmaData: ReturnType<typeof createFigmaFetch>;
+  fetchImages: (
+    fileId: string,
+    token: string,
+    nodeIds: string[],
+    options?: ImageExportOptions,
+  ) => Promise<Record<string, string | null>>;
+  download: (imageUrl: string) => Promise<ArrayBuffer>;
+}
+
 export async function exportFigmaReference(
   figmaUrl: string,
   outputDir: string,
   scale = 1,
+  session?: FigmaReferenceSession,
 ): Promise<FigmaReferenceResult> {
+  const { file_id: fileId, node_id: nodeId } = resolveParams(figmaUrl);
+  if (!nodeId) {
+    throw new Error('A Figma node ID is required for visual reference extraction. Provide node_id or a Figma URL containing ?node-id=.');
+  }
+  if (!Number.isFinite(scale) || scale < 1 || scale > 4) {
+    throw new RangeError('Figma reference scale must be between 1 and 4.');
+  }
+
   const token = process.env.FIGMA_TOKEN;
   if (!token) {
     throw new Error('FIGMA_TOKEN is required for Figma reference extraction.');
   }
 
   fs.mkdirSync(outputDir, { recursive: true });
-  const cache = new TokenCache();
-  const fetchFigmaData = createFigmaFetch(token);
-  const screenshot = await handleGetScreenshot(
-    { file_id: figmaUrl, output_dir: outputDir, scale, compress: false },
-    cache,
-    fetchFigmaData,
-    fetchFigmaImages,
-    downloadImage,
-  );
-
-  const { node_id: nodeId } = resolveParams(figmaUrl);
-  let nodePath: string | undefined;
-  if (nodeId) {
-    nodePath = path.join(outputDir, 'node.json');
-    await handleGetNodeInfo(
-      { file_id: figmaUrl, node_id: nodeId, depth: 5, deduplicate_styles: true, save_to: nodePath },
-      cache,
-      fetchFigmaData,
-    );
+  const activeSession = session ?? createFigmaReferenceSession();
+  const entry = await activeSession.cache.getOrFetch(fileId, activeSession.fetchFigmaData);
+  const node = entry.nodes.find((candidate) => candidate.node_id === nodeId);
+  if (!node) {
+    throw new Error(`Node "${nodeId}" not found in Figma file "${fileId}".`);
   }
+
+  const imageUrls = await activeSession.fetchImages(fileId, token, [nodeId], { format: 'png', scale });
+  const imageUrl = imageUrls[nodeId];
+  if (!imageUrl) {
+    throw new Error(`Figma API returned no image URL for node "${nodeId}".`);
+  }
+  const imagePath = path.join(outputDir, 'reference.png');
+  fs.writeFileSync(imagePath, new Uint8Array(await activeSession.download(imageUrl)));
+  assertValidPng(imagePath, 'Figma reference image');
+
+  const detail = collapseSvgGroups(mapNodeToDetail(
+    node.raw,
+    entry.tokens,
+    5,
+    { styles: entry.file.styles, components: entry.file.components },
+  ));
+  const nodePath = path.join(outputDir, 'node.json');
+  fs.writeFileSync(nodePath, JSON.stringify(deduplicateStyles(detail), null, 2), 'utf8');
 
   return {
     kind: 'figma-url',
     source: figmaUrl,
-    imagePath: screenshot.file_path,
+    imagePath,
     nodePath,
     nodeId,
   };
@@ -63,10 +94,22 @@ export function copyImageReference(imagePath: string, outputDir: string): FigmaR
   if (!fs.existsSync(imagePath)) {
     throw new Error(`Reference image does not exist: ${imagePath}`);
   }
+  assertValidPng(imagePath, 'Reference image');
   fs.mkdirSync(outputDir, { recursive: true });
-  const targetPath = path.join(outputDir, `reference${path.extname(imagePath) || '.png'}`);
+  const targetPath = path.join(outputDir, 'reference.png');
   fs.copyFileSync(imagePath, targetPath);
   return { kind: 'image-file', source: imagePath, imagePath: targetPath };
+}
+
+export function createFigmaReferenceSession(): FigmaReferenceSession {
+  const token = process.env.FIGMA_TOKEN;
+  if (!token) throw new Error('FIGMA_TOKEN is required for Figma reference extraction.');
+  return {
+    cache: new TokenCache(),
+    fetchFigmaData: createFigmaFetch(token),
+    fetchImages: fetchFigmaImages,
+    download: downloadImage,
+  };
 }
 
 export function createFigmaFetch(token: string) {

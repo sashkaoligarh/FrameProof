@@ -1,13 +1,14 @@
 export const PIXEL_PERFECT_ORCHESTRATION_NAME = 'pixel_perfect_orchestration';
 export const PIXEL_PERFECT_ORCHESTRATION_DESCRIPTION =
-  'Continuous React/Astro pixel-perfect implementation protocol with strict visual gates';
+  'Plan and execute a React/Astro pixel-perfect workflow with honest verification boundaries';
 
 export const PIXEL_PERFECT_ORCHESTRATION_MESSAGE = `Use this protocol when a user asks to implement or fix React/Astro UI from Figma with strict pixel-perfect requirements.
 
-## Operating Mode
+## Planning And Execution Boundary
 
-- Work in continuous_until_pass mode: do not stop at analysis, first implementation, or partial similarity.
-- Stop only when fresh post-edit visual gates pass, or when a concrete blocker is proven and classified.
+- Call plan_pixel_perfect_workflow to create a plan-only inventory, artifact paths, runbook, and gate commands.
+- The planning tool does not edit UI code, capture the live page, execute commands, or establish pixel-perfect completion.
+- After planning, perform the implementation and verification work explicitly. Continue until fresh post-edit visual gates pass, or a concrete blocker is proven and classified.
 - Never claim pixel-perfect from screenshots captured before the last code change.
 - Treat a single Figma link as full-page/full-scope input. Do not ask the user for every block link.
 
@@ -16,14 +17,14 @@ export const PIXEL_PERFECT_ORCHESTRATION_MESSAGE = `Use this protocol when a use
 1. Read project context files: CLAUDE.md, AGENTS.md, README, docs, package scripts, style/theme/token files.
 2. Identify framework and architecture: Astro, React, Next, Feature-Sliced Design, or project-native layering.
 3. Discover existing design system: fonts, colors, spacing, typography, shadows, radii, shared UI, public assets.
-4. Call pixel_perfect_orchestrator to create the full-page inventory, runbook, and final gate commands.
-5. Save Figma artifacts in .figma/ and validation artifacts in .pixel-perfect/.
+4. Call plan_pixel_perfect_workflow to create the full-page inventory, runbook, and final gate commands.
+5. Save Figma artifacts in project_root/.figma/ and validation artifacts in project_root/.pixel-perfect/.
 
 ## Full-Page Discovery
 
 - Inventory every relevant page, top-level frame, and direct child section before editing.
 - Detect desktop/tablet/mobile variants by frame names and widths.
-- If a root frame contains breakpoint children, group them as variants of one page/component.
+- For an explicitly selected root, group child frames as breakpoint variants only when their names contain breakpoint evidence; widths alone are insufficient.
 - If breakpoint frames contain sections, group sections across breakpoints and process every variant.
 - If the Figma node describes one functional block, treat it as the full scope and still inspect all breakpoint variants inside it.
 - Selectors are optional; discover or create stable live selectors per section when the user did not provide them.
@@ -40,7 +41,7 @@ export const PIXEL_PERFECT_ORCHESTRATION_MESSAGE = `Use this protocol when a use
 8. batch_screenshots for every section list
 9. get_node_info per section/breakpoint with save_to
 10. export_node_image for exact SVG/PNG assets
-11. export_page_analysis save_to=".figma/page-analysis.md"
+11. export_page_analysis output_path=".figma/page-analysis.md"
 
 ## Edit Loop
 
@@ -55,9 +56,9 @@ After each substantive edit, run a fresh capture and compare. If the gate fails,
 
 ## Design-System Rules
 
-- Use existing project tokens/classes/components before introducing new raw values.
-- If Figma token_hints delta <= 2px, prefer the token.
-- If delta > 2px, raw px is allowed only when documented in the run artifact.
+- Use existing project tokens/classes/components when an authoritative Figma binding or established project convention supports the mapping.
+- Treat get_design_tokens, generated CSS variables, and token_hints as non-authoritative values observed in nodes.
+- Preserve exact observed values unless an authoritative variable or project convention justifies substitution; verify token_hints at every delta.
 - Preserve Feature-Sliced boundaries: shared/ui, shared/assets, entities, features, widgets/sections, pages/app.
 - For Astro, keep one-page fixes inside page sections unless the task is explicitly global.
 - For React/Next, extend shared components with variants instead of duplicating component families.
@@ -66,4 +67,4 @@ After each substantive edit, run a fresh capture and compare. If the gate fails,
 
 ## Final Closure
 
-Run figma-scaler gate with --real-flow --fail-on-review for every stable selector. Any FAIL or REVIEW is non-closable unless classified as renderer_only_drift, content_drift, asset_blocker, access_blocker, or implementation_blocker with artifact evidence.`;
+Run each planner-provided safe argv array with --real-flow, --fail-on-review, and --viewports listing only available exact breakpoints plus ultrawide when desktop exists. Ultrawide is behavior-only: it must prove nonzero selector geometry, DOM visibility, and no overflow, and skipped RMSE is not a pixel PASS. Pixel acceptance still requires every available exact breakpoint. Any FAIL or REVIEW is non-closable unless classified as renderer_only_drift, content_drift, asset_blocker, access_blocker, or implementation_blocker with artifact evidence.`;

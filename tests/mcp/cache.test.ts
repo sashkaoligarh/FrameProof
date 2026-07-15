@@ -124,6 +124,19 @@ describe('TokenCache', () => {
 
       expect(fetchFn).toHaveBeenCalledTimes(1);
     });
+
+    it('deletes expired entries during direct access and listing', async () => {
+      let now = 1_000;
+      vi.spyOn(Date, 'now').mockImplementation(() => now);
+      const shortTtlCache = new TokenCache({ ttlMs: 10, maxSize: 2 });
+      const fetchFn = vi.fn().mockResolvedValue(makeFetchResult());
+
+      await shortTtlCache.getOrFetch('file-1', fetchFn);
+      now += 10;
+
+      expect(shortTtlCache.get('file-1')).toBeUndefined();
+      expect(shortTtlCache.listCached()).toEqual([]);
+    });
   });
 
   describe('force_refresh bypasses cache', () => {
@@ -138,6 +151,20 @@ describe('TokenCache', () => {
 
       expect(fetchFn).toHaveBeenCalledTimes(2);
       expect(entry.file.name).toBe('Refreshed');
+    });
+
+    it('preserves a still-valid entry when the refresh fails', async () => {
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValueOnce(makeFetchResult('Cached'))
+        .mockRejectedValueOnce(new Error('Refresh failed'));
+
+      const cached = await cache.getOrFetch('file-1', fetchFn);
+      await expect(cache.getOrFetch('file-1', fetchFn, true)).rejects.toThrow('Refresh failed');
+
+      expect(cache.get('file-1')).toBe(cached);
+      expect(await cache.getOrFetch('file-1', fetchFn)).toBe(cached);
+      expect(fetchFn).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -190,6 +217,117 @@ describe('TokenCache', () => {
       expect(list).toContain('file-1');
       expect(list).toContain('file-2');
       expect(list).toHaveLength(2);
+    });
+  });
+
+  describe('bounded LRU eviction', () => {
+    it('evicts the least recently used entry at max size', async () => {
+      const boundedCache = new TokenCache({ maxSize: 2 });
+      const fetchFn = vi.fn((fileId: string) => Promise.resolve(makeFetchResult(fileId)));
+
+      await boundedCache.getOrFetch('file-1', fetchFn);
+      await boundedCache.getOrFetch('file-2', fetchFn);
+      expect(boundedCache.get('file-1')).toBeDefined();
+      await boundedCache.getOrFetch('file-3', fetchFn);
+
+      expect(boundedCache.get('file-1')).toBeDefined();
+      expect(boundedCache.get('file-2')).toBeUndefined();
+      expect(boundedCache.get('file-3')).toBeDefined();
+    });
+  });
+
+  describe('invalidation', () => {
+    it('supports explicit invalidate and clear', async () => {
+      const fetchFn = vi.fn().mockResolvedValue(makeFetchResult());
+      await cache.getOrFetch('file-1', fetchFn);
+      await cache.getOrFetch('file-2', fetchFn);
+
+      expect(cache.invalidate('file-1')).toBe(true);
+      expect(cache.get('file-1')).toBeUndefined();
+      cache.clear();
+      expect(cache.listCached()).toEqual([]);
+    });
+
+    it('does not cache a fetch invalidated while in flight', async () => {
+      let resolveFetch: (value: FetchResult) => void;
+      const fetchFn = vi.fn().mockReturnValue(new Promise<FetchResult>((resolve) => {
+        resolveFetch = resolve;
+      }));
+
+      const pending = cache.getOrFetch('file-1', fetchFn);
+      cache.invalidate('file-1');
+      resolveFetch!(makeFetchResult('Stale'));
+      await pending;
+
+      expect(cache.get('file-1')).toBeUndefined();
+    });
+  });
+
+  describe('force-refresh races', () => {
+    it('prevents an older request from replacing a forced refresh', async () => {
+      let resolveOld: (value: FetchResult) => void;
+      let resolveRefresh: (value: FetchResult) => void;
+      const fetchFn = vi
+        .fn()
+        .mockReturnValueOnce(new Promise<FetchResult>((resolve) => {
+          resolveOld = resolve;
+        }))
+        .mockReturnValueOnce(new Promise<FetchResult>((resolve) => {
+          resolveRefresh = resolve;
+        }));
+
+      const oldRequest = cache.getOrFetch('file-1', fetchFn);
+      const refreshRequest = cache.getOrFetch('file-1', fetchFn, true);
+      resolveRefresh!(makeFetchResult('Fresh'));
+      await refreshRequest;
+      resolveOld!(makeFetchResult('Stale'));
+      await oldRequest;
+
+      expect(cache.get('file-1')?.file.name).toBe('Fresh');
+    });
+
+    it('does not let an older refresh replace cached data after a newer refresh fails', async () => {
+      const seed = vi.fn().mockResolvedValue(makeFetchResult('Cached'));
+      const cached = await cache.getOrFetch('file-1', seed);
+      let resolveOlderRefresh: (value: FetchResult) => void;
+      const olderRefresh = vi.fn().mockReturnValue(new Promise<FetchResult>((resolve) => {
+        resolveOlderRefresh = resolve;
+      }));
+
+      const olderRequest = cache.getOrFetch('file-1', olderRefresh, true);
+      await expect(
+        cache.getOrFetch('file-1', vi.fn().mockRejectedValue(new Error('Newer failed')), true),
+      ).rejects.toThrow('Newer failed');
+      resolveOlderRefresh!(makeFetchResult('Superseded'));
+      await olderRequest;
+
+      expect(cache.get('file-1')).toBe(cached);
+      expect(cache.get('file-1')?.file.name).toBe('Cached');
+    });
+
+    it('keeps deduplicating against the newer refresh after the old request settles', async () => {
+      let resolveOld: (value: FetchResult) => void;
+      let resolveRefresh: (value: FetchResult) => void;
+      const fetchFn = vi
+        .fn()
+        .mockReturnValueOnce(new Promise<FetchResult>((resolve) => {
+          resolveOld = resolve;
+        }))
+        .mockReturnValueOnce(new Promise<FetchResult>((resolve) => {
+          resolveRefresh = resolve;
+        }));
+
+      const oldRequest = cache.getOrFetch('file-1', fetchFn);
+      const refreshRequest = cache.getOrFetch('file-1', fetchFn, true);
+      resolveOld!(makeFetchResult('Stale'));
+      await oldRequest;
+      const deduplicated = cache.getOrFetch('file-1', fetchFn);
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+      resolveRefresh!(makeFetchResult('Fresh'));
+
+      const [fresh, sameFresh] = await Promise.all([refreshRequest, deduplicated]);
+      expect(sameFresh).toBe(fresh);
+      expect(cache.get('file-1')?.file.name).toBe('Fresh');
     });
   });
 

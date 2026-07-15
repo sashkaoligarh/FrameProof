@@ -5,18 +5,18 @@
  */
 
 import { z } from 'zod';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import type { ImageExportOptions } from '../../api/client.js';
 import type { CompressionResult, CompressionStats } from '../../types/tokens.js';
 import { compressImageBuffer } from '../../api/tinyjpg.js';
 import { resolveParams } from '../utils/normalize-node-id.js';
+import { atomicWriteOutputFile, nodeIdFilenamePart, prepareOutputDirectory } from '../utils/output-path.js';
 
 export const batchScreenshotsSchema = {
   file_id: z.string().describe('Figma file ID or full Figma URL (e.g. https://www.figma.com/design/FILE_ID/...)'),
   node_id: z.string().optional().describe('Parent frame whose direct children will be screenshotted. Auto-extracted from URL if not provided.'),
-  scale: z.number().optional().default(1).describe('Export scale (1-4)'),
+  scale: z.number().finite().min(1).max(4).optional().default(1).describe('Export scale (1-4)'),
   output_dir: z.string().optional().default('.figma').describe('Directory to save screenshots'),
   include_hidden: z.boolean().optional().default(false).describe('Include hidden children'),
   compress: z.boolean().optional().default(false).describe('Compress output via TinyJPG API (requires TINYJPG_TOKEN env var)'),
@@ -93,6 +93,7 @@ export async function handleBatchScreenshots(
 
   const raw = node.raw as Record<string, unknown>;
   const rawChildren = (raw.children ?? []) as Array<Record<string, unknown>>;
+  const outputDir = prepareOutputDirectory(params.output_dir ?? '.figma');
 
   // Filter children
   const childrenToScreenshot = rawChildren.filter((child) => {
@@ -104,7 +105,7 @@ export async function handleBatchScreenshots(
     return {
       parent_node_id: nodeId,
       parent_name: (raw.name as string) ?? '',
-      output_dir: params.output_dir ?? '.figma',
+      output_dir: outputDir,
       total_children: 0,
       screenshots: [],
       failed: [],
@@ -112,11 +113,6 @@ export async function handleBatchScreenshots(
   }
 
   const scale = params.scale ?? 1;
-  const outputDir = params.output_dir ?? '.figma';
-
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
 
   // Get all child node IDs
   const childNodeIds = childrenToScreenshot.map((c) => (c.id as string) ?? '');
@@ -170,8 +166,10 @@ export async function handleBatchScreenshots(
 
         const childName = (child.name as string) ?? '';
         const safeName = childName.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
-        const filePath = path.join(outputDir, `${safeName}_screenshot.png`);
-        fs.writeFileSync(filePath, fileBuffer);
+        const filePath = atomicWriteOutputFile(
+          path.join(outputDir, `${safeName}_${nodeIdFilenamePart(id)}_screenshot.png`),
+          fileBuffer,
+        );
 
         const bbox = child.absoluteBoundingBox as
           | { width: number; height: number }

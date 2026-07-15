@@ -5,12 +5,15 @@
 
 import { z } from 'zod';
 import { deleteDevResource } from '../../api/client.js';
+import { resolveParams } from '../utils/normalize-node-id.js';
 
 export const deleteDevResourceSchema = {
+  file_id: z.string().describe('Figma file ID or full Figma URL'),
   resource_id: z.string().describe('Dev resource ID to delete'),
 };
 
 export interface DeleteDevResourceParams {
+  file_id: string;
   resource_id: string;
 }
 
@@ -23,7 +26,8 @@ export async function handleDeleteDevResource(
 }> {
   process.stderr.write(`[write] DELETE DEV RESOURCE: "${params.resource_id}"\n`);
 
-  await deleteDevResource(token, params.resource_id);
+  const { file_id: fileKey } = resolveParams(params.file_id);
+  await deleteDevResource(fileKey, token, params.resource_id);
 
   return {
     deleted: true,

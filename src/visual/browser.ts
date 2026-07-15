@@ -4,6 +4,22 @@ import { chromium } from 'playwright-core';
 import type { Browser, Page } from 'playwright-core';
 import type { ViewportPreset } from './types.js';
 
+const CAPTURE_STYLES = `
+*, *::before, *::after {
+  animation: none !important;
+  caret-color: transparent !important;
+  scroll-behavior: auto !important;
+  transition: none !important;
+}
+astro-dev-toolbar,
+astro-dev-toolbar-window,
+vite-error-overlay,
+[data-astro-dev-toolbar] {
+  display: none !important;
+  visibility: hidden !important;
+}`;
+const FONT_READY_TIMEOUT_MS = 5_000;
+
 export interface DomElementSample {
   index: number;
   tag: string;
@@ -36,7 +52,11 @@ export interface LiveCaptureResult {
   fullPath: string | null;
   focusPath: string | null;
   domPath: string | null;
-  consoleMessages: Array<{ type: string; text: string }>;
+  consoleMessages: Array<{
+    type: string;
+    text: string;
+    location?: { url: string; lineNumber: number; columnNumber: number };
+  }>;
   failedRequests: Array<{ method: string; url: string; failure: string }>;
   pageErrors: string[];
   domReport: DomReport | null;
@@ -61,9 +81,11 @@ export async function captureLiveViewport(options: CaptureLiveOptions): Promise<
     deviceScaleFactor: 1,
     reducedMotion: 'reduce',
   });
+  const captureCookies = readCaptureCookies();
+  if (captureCookies.length > 0) await context.addCookies(captureCookies);
   const page = await context.newPage();
 
-  const consoleMessages: Array<{ type: string; text: string }> = [];
+  const consoleMessages: LiveCaptureResult['consoleMessages'] = [];
   const failedRequests: Array<{ method: string; url: string; failure: string }> = [];
   const pageErrors: string[] = [];
   const fullPath = path.join(options.outputDir, `${options.viewport.name}.full.png`);
@@ -76,57 +98,48 @@ export async function captureLiveViewport(options: CaptureLiveOptions): Promise<
 
   page.on('console', (message) => {
     if (message.type() === 'error') {
-      consoleMessages.push({ type: message.type(), text: message.text() });
+      const location = message.location();
+      consoleMessages.push({
+        type: message.type(),
+        text: redactUrls(message.text()),
+        location: location.url ? { ...location, url: redactUrl(location.url) } : undefined,
+      });
     }
   });
   page.on('requestfailed', (request) => {
     failedRequests.push({
       method: request.method(),
-      url: request.url(),
-      failure: request.failure()?.errorText ?? 'unknown',
+      url: redactUrl(request.url()),
+      failure: redactUrls(request.failure()?.errorText ?? 'unknown'),
     });
   });
-  page.on('pageerror', (error) => pageErrors.push(String(error)));
+  page.on('pageerror', (error) => pageErrors.push(formatError(error)));
 
   try {
     const response = await page.goto(options.pageUrl, { waitUntil: 'networkidle', timeout: 45_000 });
     status = response?.status() ?? null;
     ok = Boolean(response?.ok());
+    await page.addStyleTag({ content: CAPTURE_STYLES });
     if (options.waitMs > 0) await page.waitForTimeout(options.waitMs);
 
     await waitForImages(page);
+    await waitForFonts(page);
     await stabilizeScroll(page);
-    await page.addStyleTag({
-      content: [
-        'astro-dev-toolbar',
-        'astro-dev-toolbar-window',
-        'vite-error-overlay',
-        '[data-astro-dev-toolbar]',
-      ].join(', ') + ' { display: none !important; visibility: hidden !important; }',
-    });
-
-    const documentSize = await page.evaluate(() => ({
-      width: Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth, window.innerWidth)),
-      height: Math.ceil(Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, window.innerHeight)),
-    }));
-    if (documentSize.height > options.viewport.height) {
-      await page.setViewportSize({ width: options.viewport.width, height: documentSize.height });
-      await page.evaluate(() => window.scrollTo(0, 0));
-      await page.waitForTimeout(100);
-    }
-
-    await page.screenshot({ path: fullPath, fullPage: true });
 
     const locator = page.locator(options.selector).first();
     if (await locator.count()) {
-      await locator.screenshot({ path: focusPath });
+      await locator.screenshot({ path: focusPath, animations: 'disabled', caret: 'hide' });
       focusCaptured = true;
     }
 
     domReport = await page.evaluate(buildDomReport, options.selector) as DomReport;
+    domReport.url = redactUrl(domReport.url);
     fs.writeFileSync(domPath, JSON.stringify(domReport, null, 2), 'utf8');
+
+    // Full-page capture runs last because Playwright may scroll or resize internally.
+    await page.screenshot({ path: fullPath, fullPage: true, animations: 'disabled', caret: 'hide' });
   } catch (error) {
-    pageErrors.push(error instanceof Error ? error.message : String(error));
+    pageErrors.push(formatError(error));
   } finally {
     await context.close();
     if (closeBrowser) await browser.close();
@@ -149,6 +162,21 @@ export async function captureLiveViewport(options: CaptureLiveOptions): Promise<
   };
 }
 
+export function redactUrl(value: string): string {
+  return redactSingleUrl(value) ?? redactUrls(value);
+}
+
+function redactSingleUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const query = url.search ? '?[redacted]' : '';
+    const fragment = url.hash ? '#[redacted]' : '';
+    return `${url.protocol}//${url.host}${url.pathname}${query}${fragment}`;
+  } catch {
+    return null;
+  }
+}
+
 export async function launchChromium(): Promise<Browser> {
   const executablePath = findChromeExecutable();
   return chromium.launch({
@@ -169,11 +197,31 @@ export function findChromeExecutable(): string | undefined {
   return candidates.find((candidate) => candidate && fs.existsSync(candidate));
 }
 
+function readCaptureCookies(): Array<{ name: string; value: string; url: string }> {
+  const serialized = process.env.FIGMA_SCALER_COOKIES_JSON;
+  if (!serialized) return [];
+
+  try {
+    const cookies = JSON.parse(serialized) as unknown;
+    if (!Array.isArray(cookies)) return [];
+
+    return cookies.filter((cookie): cookie is { name: string; value: string; url: string } => (
+      typeof cookie === 'object'
+      && cookie !== null
+      && typeof cookie.name === 'string'
+      && typeof cookie.value === 'string'
+      && typeof cookie.url === 'string'
+    ));
+  } catch {
+    return [];
+  }
+}
+
 async function waitForImages(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
     const waitForImage = (image: HTMLImageElement) => new Promise<void>((resolve) => {
-      if (image.complete && image.naturalWidth > 0) {
+      if (image.complete) {
         resolve();
         return;
       }
@@ -187,6 +235,15 @@ async function waitForImages(page: Page): Promise<void> {
     });
     await Promise.race([Promise.all(Array.from(document.images).map(waitForImage)), sleep(6000)]);
   });
+}
+
+async function waitForFonts(page: Page): Promise<void> {
+  await page.evaluate(async (timeoutMs) => {
+    await Promise.race([
+      document.fonts.ready,
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
+  }, FONT_READY_TIMEOUT_MS);
 }
 
 async function stabilizeScroll(page: Page): Promise<void> {
@@ -250,6 +307,9 @@ function buildDomReport(selector: string): DomReport {
       lineHeight: styles.lineHeight,
       letterSpacing: styles.letterSpacing,
       color: styles.color,
+      animationName: styles.animationName,
+      transitionProperty: styles.transitionProperty,
+      caretColor: styles.caretColor,
     };
   };
   const describe = (element: Element, index: number): DomElementSample => ({
@@ -297,4 +357,13 @@ function buildDomReport(selector: string): DomReport {
     focusSamples,
     semanticVisibilityIssues,
   };
+}
+
+function redactUrls(value: string): string {
+  return value.replace(/https?:\/\/[^\s"'<>]+/gi, (url) => redactSingleUrl(url) ?? url);
+}
+
+function formatError(error: unknown): string {
+  if (error instanceof Error) return redactUrls(error.stack ?? `${error.name}: ${error.message}`);
+  return redactUrls(String(error));
 }

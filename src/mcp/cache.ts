@@ -15,14 +15,43 @@ export interface FetchResult {
 export type FetchCallback = (fileId: string) => Promise<FetchResult>;
 
 const DEFAULT_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const DEFAULT_MAX_SIZE = 50;
+
+export interface TokenCacheOptions {
+  ttlMs?: number;
+  maxSize?: number;
+}
+
+interface InflightEntry {
+  generation: number;
+  promise: Promise<CacheEntry>;
+}
 
 export class TokenCache {
   private cache = new Map<string, CacheEntry>();
-  private inflight = new Map<string, Promise<CacheEntry>>();
+  private inflight = new Map<string, InflightEntry>();
+  private activeGenerations = new Map<string, number>();
+  private nextGeneration = 0;
   private readonly ttlMs: number;
+  private readonly maxSize: number;
 
-  constructor(ttlMs: number = DEFAULT_TTL_MS) {
+  constructor(options: number | TokenCacheOptions = {}) {
+    const ttlMs = typeof options === 'number'
+      ? options
+      : (options.ttlMs ?? DEFAULT_TTL_MS);
+    const maxSize = typeof options === 'number'
+      ? DEFAULT_MAX_SIZE
+      : (options.maxSize ?? DEFAULT_MAX_SIZE);
+
+    if (!Number.isFinite(ttlMs) || ttlMs < 0) {
+      throw new RangeError('TokenCache ttlMs must be a non-negative finite number.');
+    }
+    if (!Number.isInteger(maxSize) || maxSize <= 0) {
+      throw new RangeError('TokenCache maxSize must be a positive integer.');
+    }
+
     this.ttlMs = ttlMs;
+    this.maxSize = maxSize;
   }
 
   /**
@@ -34,29 +63,30 @@ export class TokenCache {
     fetchFn: FetchCallback,
     forceRefresh = false,
   ): Promise<CacheEntry> {
-    // Return cached if valid and not force-refreshing
     if (!forceRefresh) {
-      const cached = this.cache.get(fileId);
-      if (cached && !this.isExpired(cached)) {
-        return cached;
-      }
+      const cached = this.get(fileId);
+      if (cached) return cached;
     }
 
-    // Deduplicate: if there's already an in-flight request, reuse it
     const existing = this.inflight.get(fileId);
     if (existing && !forceRefresh) {
-      return existing;
+      return existing.promise;
     }
 
-    // Create new fetch promise
-    const fetchPromise = this.doFetch(fileId, fetchFn);
-    this.inflight.set(fileId, fetchPromise);
+    const generation = ++this.nextGeneration;
+    this.activeGenerations.set(fileId, generation);
+    const fetchPromise = this.doFetch(fileId, fetchFn, generation);
+    this.inflight.set(fileId, { generation, promise: fetchPromise });
 
     try {
-      const entry = await fetchPromise;
-      return entry;
+      return await fetchPromise;
     } finally {
-      this.inflight.delete(fileId);
+      if (this.inflight.get(fileId)?.generation === generation) {
+        this.inflight.delete(fileId);
+      }
+      if (this.activeGenerations.get(fileId) === generation && !this.cache.has(fileId)) {
+        this.activeGenerations.delete(fileId);
+      }
     }
   }
 
@@ -64,7 +94,9 @@ export class TokenCache {
   listCached(): string[] {
     const result: string[] = [];
     for (const [fileId, entry] of this.cache) {
-      if (!this.isExpired(entry)) {
+      if (this.isExpired(entry)) {
+        this.deleteCached(fileId);
+      } else {
         result.push(fileId);
       }
     }
@@ -74,19 +106,41 @@ export class TokenCache {
   /** Get a cached entry without fetching. Returns undefined if not cached or expired. */
   get(fileId: string): CacheEntry | undefined {
     const entry = this.cache.get(fileId);
-    if (entry && !this.isExpired(entry)) {
-      return entry;
+    if (!entry) return undefined;
+    if (this.isExpired(entry)) {
+      this.deleteCached(fileId);
+      return undefined;
     }
-    return undefined;
+
+    // Map insertion order is the LRU order; move hits to the newest position.
+    this.cache.delete(fileId);
+    this.cache.set(fileId, entry);
+    return entry;
+  }
+
+  /** Remove one cached value and supersede any in-flight fetch for it. */
+  invalidate(fileId: string): boolean {
+    const existed = this.cache.delete(fileId) || this.inflight.has(fileId);
+    this.inflight.delete(fileId);
+    this.activeGenerations.delete(fileId);
+    return existed;
+  }
+
+  /** Remove all cached values and prevent current in-flight fetches from storing results. */
+  clear(): void {
+    this.cache.clear();
+    this.inflight.clear();
+    this.activeGenerations.clear();
   }
 
   private isExpired(entry: CacheEntry): boolean {
-    return Date.now() - entry.fetched_at > entry.ttl_ms;
+    return Date.now() - entry.fetched_at >= entry.ttl_ms;
   }
 
   private async doFetch(
     fileId: string,
     fetchFn: FetchCallback,
+    generation: number,
   ): Promise<CacheEntry> {
     const result = await fetchFn(fileId);
     const entry: CacheEntry = {
@@ -97,7 +151,29 @@ export class TokenCache {
       fetched_at: Date.now(),
       ttl_ms: this.ttlMs,
     };
+
+    if (this.activeGenerations.get(fileId) !== generation) {
+      return entry;
+    }
+
+    this.cache.delete(fileId);
     this.cache.set(fileId, entry);
+    this.evictOverflow();
     return entry;
+  }
+
+  private evictOverflow(): void {
+    while (this.cache.size > this.maxSize) {
+      const oldestFileId = this.cache.keys().next().value as string | undefined;
+      if (oldestFileId === undefined) return;
+      this.deleteCached(oldestFileId);
+    }
+  }
+
+  private deleteCached(fileId: string): void {
+    this.cache.delete(fileId);
+    if (!this.inflight.has(fileId)) {
+      this.activeGenerations.delete(fileId);
+    }
   }
 }

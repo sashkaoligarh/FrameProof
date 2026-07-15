@@ -5,6 +5,7 @@
  */
 
 import type { AllTokens } from '../types/tokens.js';
+import { allocateCssTokenNames } from '../utils/css-token-names.js';
 
 /**
  * Generate a Markdown string summarizing all design tokens.
@@ -16,6 +17,11 @@ export function generateMarkdown(
   fileName: string,
 ): string {
   const lines: string[] = [];
+  const cssNames = allocateCssTokenNames(tokens);
+  const colorNames = new Map(cssNames.colors.map(({ token, name }) => [token, name]));
+  const spacingNames = new Map(cssNames.spacing.map(({ token, name }) => [token, name]));
+  const radiusNames = new Map(cssNames.radii.map(({ token, name }) => [token, name]));
+  const shadowNames = new Map(cssNames.shadows.map(({ token, name }) => [token, name]));
 
   // ----- Source -----
   lines.push('# Design System Tokens');
@@ -51,7 +57,7 @@ export function generateMarkdown(
     lines.push('| CSS Variable | Hex | Usage Count | Node ID |');
     lines.push('| --- | --- | --- | --- |');
     for (const c of sorted) {
-      lines.push(`| \`--color-${c.name}\` | \`${c.value_hex}\` | ${c.usage_count} | ${c.node_id} |`);
+      lines.push(`| \`--${colorNames.get(c)}\` | \`${c.value_hex}\` | ${c.usage_count} | ${c.node_id} |`);
     }
   } else {
     lines.push('No color tokens extracted.');
@@ -79,7 +85,7 @@ export function generateMarkdown(
   if (tokens.spacing.length > 0) {
     const sorted = [...tokens.spacing].sort((a, b) => a.value - b.value);
     for (const s of sorted) {
-      lines.push(`- \`--spacing-${s.value}\`: ${s.value}px`);
+      lines.push(`- \`--${spacingNames.get(s)}\`: ${s.value}px`);
     }
   } else {
     lines.push('No spacing tokens extracted.');
@@ -92,7 +98,7 @@ export function generateMarkdown(
   if (tokens.radii.length > 0) {
     const sorted = [...tokens.radii].sort((a, b) => a.value - b.value);
     for (const r of sorted) {
-      lines.push(`- \`--radius-${r.value}\`: ${r.value}px`);
+      lines.push(`- \`--${radiusNames.get(r)}\`: ${r.value}px`);
     }
   } else {
     lines.push('No border radius tokens extracted.');
@@ -106,7 +112,7 @@ export function generateMarkdown(
     lines.push('| Name | CSS Value |');
     lines.push('| --- | --- |');
     for (const s of tokens.shadows) {
-      lines.push(`| \`--${s.name}\` | \`${s.css}\` |`);
+      lines.push(`| \`--${shadowNames.get(s)}\` | \`${s.css}\` |`);
     }
   } else {
     lines.push('No shadow tokens extracted.');

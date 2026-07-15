@@ -16,10 +16,11 @@ This directory is gitignored and should never be committed.
 
 1. get_screenshot — take a full-page screenshot for visual reference
 2. get_document_structure — understand pages, frames, component counts
-3. get_design_tokens with save_to=".figma/tokens.json" — save tokens to file
-4. get_css_variables with save_to=".figma/design-system.css" — generate CSS variables file
-   - Import this CSS file in your project for all token references
-5. get_frame_overview — get a lightweight map of all sections in the page
+3. get_design_tokens with save_to=".figma/tokens.json" — save values generated from observed node properties
+4. get_css_variables with save_to=".figma/design-system.css" — generate CSS custom properties from those observed values
+   - Import this CSS file only when the project wants these generated references
+5. When get_variables is available, call it for authoritative Figma variables, collections, modes, aliases, and IDs
+6. get_frame_overview — get a lightweight map of all sections in the page
    - Returns each section's name, type, dimensions, visibility, component refs
    - Shows gap_to_next between siblings (useful for spacing verification)
    - Shows main_component_name for instances (resolved from file metadata)
@@ -50,16 +51,20 @@ For comprehensive analysis, use export_page_analysis:
 
 ALWAYS check these for EVERY section — missing any of these creates visual bugs:
 
-### Token hints (non-standard values) — NEW
-- Check token_hints array on each node — it flags values that don't match any design token
+### Value and token semantics
+- get_design_tokens reports deduplicated values observed in nodes; it does not prove those values are Figma variables
+- get_css_variables and css_variable fields are generated CSS names for observed values
+- get_variables is authoritative for actual Figma variables when that tool is available
+- Check token_hints on each node — it flags values that differ from the observed/generated value set
 - Example: padding-top: 17px with nearest token --spacing-16 (delta: +1)
-- This usually means: designer rounded incorrectly, or it's an intentional override
-- ALWAYS use the token value unless there's a clear reason for the override
+- nearest_token is a similarity hint, not evidence of a variable binding or designer error
+- Preserve the exact observed value unless an authoritative variable or project convention supports replacement
 
-### Applied styles (Figma shared styles) — NEW
+### Applied styles (Figma shared styles)
 - Check applied_styles on nodes — shows the Figma shared style name
 - Example: { fill: { name: "Primary/Blue" }, text: { name: "Body/Regular" } }
 - This tells you the semantic intent — use matching CSS class/variable names
+- Named shared styles are distinct from Figma variables; do not infer a variable binding from a style name
 
 ### Constraints and sizing — NEW
 - Check constraints on nodes — horizontal/vertical positioning constraints
@@ -78,7 +83,8 @@ ALWAYS check these for EVERY section — missing any of these creates visual bug
 - Check fills for fill_type: "image" — these are background images
 - ALWAYS verify: scale_mode_css (cover/contain/repeat), position, dimensions
 - Check for position: "absolute" elements — these are often decorative shapes,
-  background patterns, or floating icons. Verify their exact x/y position relative to parent
+  background patterns, or floating icons. Verify parent_relative_x/parent_relative_y
+- canvas_x/canvas_y are global canvas coordinates; deprecated x/y are the same global values, not parent-relative
 - Call export_node_image to download the actual image asset
 
 ### Component instances — go to main component
@@ -91,7 +97,8 @@ ALWAYS check these for EVERY section — missing any of these creates visual bug
 
 ### Element presence/absence
 - Check visible: false elements — they exist in Figma but should NOT be rendered
-- Check opacity < 1 — these elements ARE visible but semi-transparent
+- Check NodeDetail.opacity < 1 for node/layer opacity
+- Fill/stroke opacity is paint-level and already combined with color or gradient-stop alpha; keep it separate from node opacity
 - Count exact children in each section and compare with your implementation
 - Missing elements (buttons, icons, dividers, badges) are common implementation errors
 
@@ -104,12 +111,14 @@ ALWAYS check these for EVERY section — missing any of these creates visual bug
 - layout.primary_axis_align and counter_axis_align control flex alignment
 - Check EVERY padding value (top, right, bottom, left) — they may all differ
 - item_spacing is the gap between children — match exactly
-- position: "absolute" elements are NOT in the auto-layout flow
+- position: "absolute" children are manually positioned, including children of non-auto-layout frames
+- position: "relative" children participate in the parent's auto-layout flow
+- Use parent_relative_x/parent_relative_y only for manual offsets; do not position flow children from canvas coordinates
 - Check gap_to_next in frame overview for spacing between sibling sections
 
 ### Visual effects
 - blend_mode_css → apply as mix-blend-mode
-- opacity → apply as CSS opacity
+- NodeDetail.opacity → apply as CSS opacity; do not apply it a second time to paint alpha
 - rotation → apply as transform: rotate()
 - effects with css_property "backdrop-filter" → apply backdrop-filter: blur()
 
@@ -126,4 +135,4 @@ ALWAYS check these for EVERY section — missing any of these creates visual bug
 - After implementing each section, compare against the section screenshot
 - Check: element count, colors, spacing, font sizes, background positions
 - Use get_screenshot for the full page after all sections are complete
-- Pay special attention to token_hints — these are the most common source of subtle bugs`;
+- Verify token_hints against authoritative variables or project conventions before substituting the observed value`;

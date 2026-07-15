@@ -9,7 +9,7 @@
  * - Error handling: 404 not found
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FigmaApiError } from '../../../src/api/client.js';
 import {
   MOCK_FILE_KEY,
@@ -19,6 +19,7 @@ import {
   MOCK_DEV_RESOURCE_2,
   MOCK_LIST_RESPONSE,
   MOCK_CREATE_RESPONSE,
+  MOCK_UPDATE_RESPONSE,
 } from '../../fixtures/write-api/dev-resources.js';
 import { MOCK_404_NOT_FOUND } from '../../fixtures/write-api/errors.js';
 
@@ -144,9 +145,9 @@ describe('handleCreateDevResource', () => {
         MOCK_TOKEN,
       );
 
-      expect(result).toHaveProperty('resource_id', MOCK_CREATE_RESPONSE.dev_resources[0].id);
-      expect(result).toHaveProperty('name', MOCK_CREATE_RESPONSE.dev_resources[0].name);
-      expect(result).toHaveProperty('url', MOCK_CREATE_RESPONSE.dev_resources[0].url);
+      expect(result).toHaveProperty('resource_id', MOCK_CREATE_RESPONSE.links_created[0].id);
+      expect(result).toHaveProperty('name', MOCK_CREATE_RESPONSE.links_created[0].name);
+      expect(result).toHaveProperty('url', MOCK_CREATE_RESPONSE.links_created[0].url);
       expect(result).toHaveProperty('node_id');
       expect(result).toHaveProperty('created', true);
     });
@@ -198,6 +199,28 @@ describe('handleCreateDevResource', () => {
       expect(result.url).toBe(MOCK_DEV_RESOURCE.url);
       expect(result.created).toBe(false);
     });
+
+    it('does not log an existing sensitive URL', async () => {
+      mockGetDevResources.mockResolvedValue(MOCK_LIST_RESPONSE);
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+      try {
+        await handleCreateDevResource(
+          {
+            file_id: MOCK_FILE_KEY,
+            node_id: MOCK_NODE_ID,
+            name: 'Button.tsx',
+            url: MOCK_DEV_RESOURCE.url,
+          },
+          MOCK_TOKEN,
+        );
+
+        const logged = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
+        expect(logged).not.toContain(MOCK_DEV_RESOURCE.url);
+      } finally {
+        stderrSpy.mockRestore();
+      }
+    });
   });
 
   describe('max 10 per node validation error', () => {
@@ -224,6 +247,28 @@ describe('handleCreateDevResource', () => {
       ).rejects.toThrow(/max 10/i);
 
       expect(mockPostDevResources).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('item-level API error', () => {
+    it('throws instead of fabricating an ID when Figma creates no link', async () => {
+      mockGetDevResources.mockResolvedValue({ dev_resources: [] });
+      mockPostDevResources.mockResolvedValue({
+        links_created: [],
+        errors: [{ file_key: MOCK_FILE_KEY, node_id: MOCK_NODE_ID, error: 'Duplicate URL' }],
+      });
+
+      await expect(
+        handleCreateDevResource(
+          {
+            file_id: MOCK_FILE_KEY,
+            node_id: MOCK_NODE_ID,
+            name: 'NewComponent.tsx',
+            url: 'https://example.com/component',
+          },
+          MOCK_TOKEN,
+        ),
+      ).rejects.toThrow('Duplicate URL');
     });
   });
 
@@ -262,7 +307,7 @@ describe('handleUpdateDevResource', () => {
 
   describe('success', () => {
     it('returns resource_id and updated_fields', async () => {
-      mockPutDevResources.mockResolvedValue(undefined);
+      mockPutDevResources.mockResolvedValue(MOCK_UPDATE_RESPONSE);
 
       const result = await handleUpdateDevResource(
         {
@@ -279,7 +324,7 @@ describe('handleUpdateDevResource', () => {
     });
 
     it('calls putDevResources with correct payload', async () => {
-      mockPutDevResources.mockResolvedValue(undefined);
+      mockPutDevResources.mockResolvedValue(MOCK_UPDATE_RESPONSE);
 
       await handleUpdateDevResource(
         {
@@ -303,7 +348,9 @@ describe('handleUpdateDevResource', () => {
 
   describe('name-only update', () => {
     it('returns updated_fields with only "name"', async () => {
-      mockPutDevResources.mockResolvedValue(undefined);
+      mockPutDevResources.mockResolvedValue({
+        links_updated: [{ ...MOCK_UPDATE_RESPONSE.links_updated![0], name: 'RenamedButton.tsx' }],
+      });
 
       const result = await handleUpdateDevResource(
         { resource_id: MOCK_DEV_RESOURCE.id, name: 'RenamedButton.tsx' },
@@ -317,7 +364,12 @@ describe('handleUpdateDevResource', () => {
 
   describe('url-only update', () => {
     it('returns updated_fields with only "url"', async () => {
-      mockPutDevResources.mockResolvedValue(undefined);
+      mockPutDevResources.mockResolvedValue({
+        links_updated: [{
+          ...MOCK_UPDATE_RESPONSE.links_updated![0],
+          url: 'https://github.com/org/repo/blob/main/src/NewUrl.tsx',
+        }],
+      });
 
       const result = await handleUpdateDevResource(
         {
@@ -329,6 +381,21 @@ describe('handleUpdateDevResource', () => {
 
       expect(result.updated_fields).toEqual(['url']);
       expect(result.updated_fields).not.toContain('name');
+    });
+  });
+
+  describe('item-level API error', () => {
+    it('throws when Figma does not confirm the requested update', async () => {
+      mockPutDevResources.mockResolvedValue({
+        errors: [{ id: MOCK_DEV_RESOURCE.id, error: 'Resource is not editable' }],
+      });
+
+      await expect(
+        handleUpdateDevResource(
+          { resource_id: MOCK_DEV_RESOURCE.id, name: 'RenamedButton.tsx' },
+          MOCK_TOKEN,
+        ),
+      ).rejects.toThrow('Resource is not editable');
     });
   });
 });
@@ -345,7 +412,7 @@ describe('handleDeleteDevResource', () => {
       mockDeleteDevResource.mockResolvedValue(undefined);
 
       const result = await handleDeleteDevResource(
-        { resource_id: MOCK_DEV_RESOURCE.id },
+        { file_id: MOCK_FILE_KEY, resource_id: MOCK_DEV_RESOURCE.id },
         MOCK_TOKEN,
       );
 
@@ -356,10 +423,17 @@ describe('handleDeleteDevResource', () => {
     it('calls deleteDevResource with correct token and resource_id', async () => {
       mockDeleteDevResource.mockResolvedValue(undefined);
 
-      await handleDeleteDevResource({ resource_id: MOCK_DEV_RESOURCE.id }, MOCK_TOKEN);
+      await handleDeleteDevResource(
+        { file_id: MOCK_FILE_KEY, resource_id: MOCK_DEV_RESOURCE.id },
+        MOCK_TOKEN,
+      );
 
       expect(mockDeleteDevResource).toHaveBeenCalledOnce();
-      expect(mockDeleteDevResource).toHaveBeenCalledWith(MOCK_TOKEN, MOCK_DEV_RESOURCE.id);
+      expect(mockDeleteDevResource).toHaveBeenCalledWith(
+        MOCK_FILE_KEY,
+        MOCK_TOKEN,
+        MOCK_DEV_RESOURCE.id,
+      );
     });
   });
 
@@ -370,7 +444,10 @@ describe('handleDeleteDevResource', () => {
       );
 
       await expect(
-        handleDeleteDevResource({ resource_id: MOCK_DEV_RESOURCE.id }, MOCK_TOKEN),
+        handleDeleteDevResource(
+          { file_id: MOCK_FILE_KEY, resource_id: MOCK_DEV_RESOURCE.id },
+          MOCK_TOKEN,
+        ),
       ).rejects.toMatchObject({ status: 404 });
     });
 
@@ -380,8 +457,108 @@ describe('handleDeleteDevResource', () => {
       );
 
       await expect(
-        handleDeleteDevResource({ resource_id: MOCK_DEV_RESOURCE.id }, MOCK_TOKEN),
+        handleDeleteDevResource(
+          { file_id: MOCK_FILE_KEY, resource_id: MOCK_DEV_RESOURCE.id },
+          MOCK_TOKEN,
+        ),
       ).rejects.toThrow(FigmaApiError);
     });
+  });
+});
+
+// ─── HTTP contract ────────────────────────────────────────
+
+describe('Dev Resources HTTP contract', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('uses node_ids for the GET filter', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(MOCK_LIST_RESPONSE), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = await vi.importActual<typeof import('../../../src/api/client.js')>(
+      '../../../src/api/client.js',
+    );
+
+    await client.getDevResources(MOCK_FILE_KEY, MOCK_TOKEN, MOCK_NODE_ID);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `https://api.figma.com/v1/files/${MOCK_FILE_KEY}/dev_resources?node_ids=42%3A100`,
+    );
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'GET' });
+  });
+
+  it('sends the POST body and preserves links_created plus partial errors', async () => {
+    const response = {
+      ...MOCK_CREATE_RESPONSE,
+      errors: [{ file_key: 'other-file', node_id: null, error: 'Node not found' }],
+    };
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(response), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = await vi.importActual<typeof import('../../../src/api/client.js')>(
+      '../../../src/api/client.js',
+    );
+    const request = {
+      name: 'NewComponent.tsx',
+      url: 'https://github.com/org/repo/blob/main/src/New.tsx',
+      file_key: MOCK_FILE_KEY,
+      node_id: MOCK_NODE_ID,
+    };
+
+    const result = await client.postDevResources(MOCK_TOKEN, [request]);
+
+    expect(result).toEqual(response);
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.figma.com/v1/dev_resources');
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ dev_resources: [request] }),
+    });
+  });
+
+  it('returns links_updated and item-level PUT errors', async () => {
+    const response = {
+      ...MOCK_UPDATE_RESPONSE,
+      errors: [{ id: 'other-resource', error: 'Resource not found' }],
+    };
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(response), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = await vi.importActual<typeof import('../../../src/api/client.js')>(
+      '../../../src/api/client.js',
+    );
+    const request = { id: MOCK_DEV_RESOURCE.id, name: 'UpdatedButton.tsx' };
+
+    const result = await client.putDevResources(MOCK_TOKEN, [request]);
+
+    expect(result).toEqual(response);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({ dev_resources: [request] }),
+    });
+  });
+
+  it('uses the file-scoped DELETE endpoint and accepts an empty response body', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = await vi.importActual<typeof import('../../../src/api/client.js')>(
+      '../../../src/api/client.js',
+    );
+
+    await expect(
+      client.deleteDevResource(MOCK_FILE_KEY, MOCK_TOKEN, MOCK_DEV_RESOURCE.id),
+    ).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `https://api.figma.com/v1/files/${MOCK_FILE_KEY}/dev_resources/${MOCK_DEV_RESOURCE.id}`,
+    );
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'DELETE' });
   });
 });

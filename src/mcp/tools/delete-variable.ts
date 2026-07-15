@@ -12,7 +12,7 @@ import { getLocalVariables, postVariables } from '../../api/client.js';
 export const deleteVariableSchema = {
   file_id: z.string().describe('Figma file ID or full Figma URL'),
   variable_id: z.string().describe('Variable ID to delete'),
-  dry_run: z.boolean().optional().default(false).describe(
+  dry_run: z.boolean().optional().default(true).describe(
     'If true, returns preview of what would be deleted without making API calls',
   ),
 };
@@ -34,7 +34,7 @@ export async function handleDeleteVariable(
 
   process.stderr.write(`[write] DELETE VARIABLE: "${params.variable_id}" in file ${fileKey}\n`);
 
-  if (params.dry_run) {
+  if (params.dry_run ?? true) {
     // Get variable info for dry run preview
     const response = await getLocalVariables(fileKey, token);
     const variables = response.meta?.variables ?? {};

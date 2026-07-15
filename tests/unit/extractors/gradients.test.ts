@@ -112,6 +112,34 @@ describe('extractGradients — stops', () => {
   });
 });
 
+describe('extractGradients — paint opacity', () => {
+  it('combines gradient paint opacity with each stop alpha', () => {
+    const mockNode: ParsedNode = {
+      node_id: 'gradient:alpha',
+      node_type: 'RECTANGLE',
+      name: 'Transparent gradient',
+      parent_id: null,
+      depth: 0,
+      raw: {
+        type: 'RECTANGLE',
+        fills: [{
+          type: 'GRADIENT_LINEAR',
+          opacity: 0.5,
+          gradientStops: [
+            { position: 0, color: { r: 1, g: 0, b: 0, a: 0.5 } },
+          ],
+          gradientHandlePositions: [],
+        }],
+      } as unknown as Node,
+    };
+
+    const [gradient] = extractGradients([mockNode]);
+
+    expect(gradient.stops[0].color_rgba.a).toBe(0.25);
+    expect(gradient.stops[0].color_hex).toBe('#ff000040');
+  });
+});
+
 describe('extractGradients — handle_positions', () => {
   const gradients = extractGradients(nodes);
   const handles = gradients[0].handle_positions;

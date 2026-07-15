@@ -78,7 +78,9 @@ describe('handleGetCSSVariables', () => {
     const entry = makeCacheEntry('file-1');
     mockFetchFn.mockResolvedValue({ file: entry.file, nodes: entry.nodes, tokens: entry.tokens });
 
-    const tmpFile = path.join(tmpdir(), `test-css-${Date.now()}.css`);
+    const outputRoot = fs.mkdtempSync(path.join(tmpdir(), 'figma-scaler-css-'));
+    const tmpFile = path.join(outputRoot, 'design-system.css');
+    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputRoot;
     try {
       const result = await handleGetCSSVariables(
         { file_id: 'file-1', save_to: tmpFile },
@@ -92,7 +94,8 @@ describe('handleGetCSSVariables', () => {
       const content = fs.readFileSync(tmpFile, 'utf-8');
       expect(content).toContain(':root {');
     } finally {
-      if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+      delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
+      fs.rmSync(outputRoot, { recursive: true, force: true });
     }
   });
 

@@ -1,6 +1,7 @@
 {
   "name": "figma-scaler",
   "version": "0.1.0",
+  "private": true,
   "description": "Pixel-perfect Figma token, orchestration, and visual gate toolkit for AI-assisted React/Astro development",
   "type": "module",
   "bin": {
@@ -8,11 +9,11 @@
     "mcp": "./dist/mcp/server.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
     "build": "tsc",
-    "build:mcp": "tsc && echo '#!/usr/bin/env node' | cat - dist/mcp/server.js > dist/mcp/server.tmp && mv dist/mcp/server.tmp dist/mcp/server.js",
+    "build:mcp": "tsc",
     "mcp:start": "node dist/mcp/server.js",
     "test": "vitest run",
     "test:watch": "vitest",

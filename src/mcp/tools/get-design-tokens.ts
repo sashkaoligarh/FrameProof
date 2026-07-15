@@ -5,11 +5,11 @@
  */
 
 import { z } from 'zod';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type { TokenCache, FetchCallback } from '../cache.js';
-import type { AllTokens } from '../../types/tokens.js';
+import type { AllTokens, ParsedNode } from '../../types/tokens.js';
+import { extractAllTokens } from '../../pipeline/transform.js';
 import { resolveParams } from '../utils/normalize-node-id.js';
+import { atomicWriteOutputFile } from '../utils/output-path.js';
 
 const ALL_CATEGORIES = ['colors', 'gradients', 'typography', 'spacing', 'radii', 'shadows', 'images', 'components'] as const;
 type TokenCategory = (typeof ALL_CATEGORIES)[number];
@@ -41,10 +41,16 @@ export interface GetDesignTokensParams {
   save_to?: string;
 }
 
+export type DesignTokenScope =
+  | { type: 'file' }
+  | { type: 'page'; page: string; page_id: string }
+  | { type: 'node'; node_id: string; node_name: string };
+
 export interface GetDesignTokensResult {
   file_name: string;
   node_count: number;
   cached: boolean;
+  scope: DesignTokenScope;
   colors?: AllTokens['colors'];
   gradients?: AllTokens['gradients'];
   typography?: AllTokens['typography'];
@@ -61,6 +67,7 @@ export interface GetDesignTokensSavedResult {
   file_name: string;
   node_count: number;
   cached: boolean;
+  scope: DesignTokenScope;
   token_counts: Record<string, number>;
 }
 
@@ -75,7 +82,7 @@ export async function handleGetDesignTokens(
   cache: TokenCache,
   fetchFn: FetchCallback,
 ): Promise<GetDesignTokensResult | GetDesignTokensSavedResult> {
-  const { file_id: fileId } = resolveParams(params.file_id);
+  const { file_id: fileId, node_id: nodeId } = resolveParams(params.file_id, params.node_id);
 
   // Track whether this was a cache hit
   const wasCached = !params.force_refresh && cache.get(fileId) !== undefined;
@@ -86,37 +93,78 @@ export async function handleGetDesignTokens(
     params.force_refresh ?? false,
   );
 
+  let scopedNodes = entry.nodes;
+  let tokens = entry.tokens;
+  let scope: DesignTokenScope = { type: 'file' };
+
+  // A node ID, including one embedded in the Figma URL, takes precedence over page.
+  if (nodeId) {
+    const node = entry.nodes.find((candidate) => candidate.node_id === nodeId);
+    if (!node) {
+      throw new Error(
+        `Node "${nodeId}" not found in file "${fileId}". ` +
+          `Use get_document_structure to discover available node IDs.`,
+      );
+    }
+    scopedNodes = collectSubtree(entry.nodes, node.node_id);
+    tokens = extractAllTokens(
+      scopedNodes,
+      entry.file.styles,
+      entry.file.components,
+      entry.file.component_sets,
+    );
+    scope = { type: 'node', node_id: node.node_id, node_name: node.name };
+  } else if (params.page) {
+    const pages = entry.nodes.filter((node) => node.node_type === 'CANVAS');
+    const page = pages.find((candidate) => candidate.name === params.page);
+    if (!page) {
+      const availablePages = pages.map((candidate) => candidate.name);
+      throw new Error(
+        `Page "${params.page}" not found in file "${fileId}". ` +
+          (availablePages.length > 0
+            ? `Available pages: ${availablePages.join(', ')}.`
+            : 'No pages are available in the cached document.') +
+          ' Use get_document_structure to inspect the file.',
+      );
+    }
+    scopedNodes = collectSubtree(entry.nodes, page.node_id);
+    tokens = extractAllTokens(
+      scopedNodes,
+      entry.file.styles,
+      entry.file.components,
+      entry.file.component_sets,
+    );
+    scope = { type: 'page', page: page.name, page_id: page.node_id };
+  }
+
   // Default: exclude components and images (they cause 27M+ output)
   const categories = params.categories ?? ['colors', 'gradients', 'typography', 'spacing', 'radii', 'shadows'];
 
   const filtered: Partial<AllTokens> = {};
   for (const cat of categories) {
-    filtered[cat] = entry.tokens[cat] as never;
+    filtered[cat] = tokens[cat] as never;
   }
 
   const meta = {
     file_name: entry.file.name,
-    node_count: entry.nodes.length,
+    node_count: scopedNodes.length,
     cached: wasCached,
+    scope,
   };
 
   // If save_to is specified, write to file and return summary
   if (params.save_to) {
     const dataToSave = { ...meta, ...filtered };
     const jsonStr = JSON.stringify(dataToSave, null, 2);
-    const dir = path.dirname(params.save_to);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(params.save_to, jsonStr, 'utf-8');
+    const savedTo = atomicWriteOutputFile(params.save_to, jsonStr);
 
     const tokenCounts: Record<string, number> = {};
     for (const cat of categories) {
-      tokenCounts[cat] = entry.tokens[cat].length;
+      tokenCounts[cat] = tokens[cat].length;
     }
 
     return {
-      saved_to: params.save_to,
+      saved_to: savedTo,
       file_size_bytes: Buffer.byteLength(jsonStr, 'utf-8'),
       ...meta,
       token_counts: tokenCounts,
@@ -124,4 +172,27 @@ export async function handleGetDesignTokens(
   }
 
   return { ...meta, ...filtered };
+}
+
+function collectSubtree(nodes: ParsedNode[], rootId: string): ParsedNode[] {
+  const childrenByParent = new Map<string, string[]>();
+  for (const node of nodes) {
+    if (!node.parent_id) continue;
+    const children = childrenByParent.get(node.parent_id) ?? [];
+    children.push(node.node_id);
+    childrenByParent.set(node.parent_id, children);
+  }
+
+  const included = new Set<string>([rootId]);
+  const pending = [rootId];
+  while (pending.length > 0) {
+    const parentId = pending.pop()!;
+    for (const childId of childrenByParent.get(parentId) ?? []) {
+      if (included.has(childId)) continue;
+      included.add(childId);
+      pending.push(childId);
+    }
+  }
+
+  return nodes.filter((node) => included.has(node.node_id));
 }

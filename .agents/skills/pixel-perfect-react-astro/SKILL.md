@@ -8,7 +8,7 @@ Use this skill when the user provides a Figma link or screenshot and wants React
 - "make it pixel-perfect"
 - "fix layout against Figma"
 - "strict visual gate"
-- Any request that references `/home/sashka/projects/figma_scaler` as the orchestration source
+- Any request that identifies this source checkout as the orchestration source
 - A bare Figma link plus a route/page URL. Treat this as a full-page task, not a request for one block.
 
 ## Required Behavior
@@ -25,7 +25,7 @@ Use this skill when the user provides a Figma link or screenshot and wants React
 ## MCP Sequence
 
 1. Load prompt `pixel_perfect_orchestration`.
-2. Call `pixel_perfect_orchestrator` with the Figma URL, target route/page URL, framework, and project root. Known selectors are optional; discover them when missing.
+2. Call `plan_pixel_perfect_workflow` with the Figma URL, target route/page URL, framework, and project root. This creates an inventory and runbook only; known selectors are optional and must be discovered during implementation when missing.
 3. Load prompts `read_design_strategy` and `layout_strategy`.
 4. Run `get_document_structure`, `get_screenshot`, `get_design_tokens`, `get_css_variables`, `get_frame_overview`, `batch_screenshots`, per-section/per-breakpoint `get_node_info`, `export_node_image`, and `export_page_analysis`.
 5. Implement section by section.
@@ -51,8 +51,8 @@ Use this skill when the user provides a Figma link or screenshot and wants React
 ## Design System Rules
 
 - Use existing fonts, CSS variables, theme files, shared UI, and public assets before adding new values.
-- If Figma `token_hints` delta is `<= 2px`, use the nearest token.
-- If delta is `> 2px`, raw values are allowed only with artifact notes.
+- Treat `token_hints` as non-authoritative suggestions derived from observed values.
+- Preserve the exact Figma value unless an authoritative Figma variable or verified project token intentionally replaces it.
 - For Astro page work, do not mutate shared `Header`, `Footer`, or global UI for one route unless explicitly global.
 - For React/Next, add variants/props to shared components instead of forking component families.
 - Do not invent responsive layouts when Figma has breakpoint-specific frames.

@@ -46,6 +46,7 @@ describe('handleSyncVariables', () => {
       await handleSyncVariables(
         {
           file_id: MOCK_FILE_KEY,
+          dry_run: false,
           variable_collections: [
             { action: 'CREATE', id: 'temp_collection_1', name: 'Brand Colors' },
           ],
@@ -84,6 +85,7 @@ describe('handleSyncVariables', () => {
       const result = await handleSyncVariables(
         {
           file_id: MOCK_FILE_KEY,
+          dry_run: false,
           variable_collections: [
             { action: 'CREATE', id: 'temp_collection_1', name: 'Brand Colors' },
           ],
@@ -100,6 +102,7 @@ describe('handleSyncVariables', () => {
       const result = await handleSyncVariables(
         {
           file_id: MOCK_FILE_KEY,
+          dry_run: false,
           variable_collections: [
             { action: 'CREATE', id: 'temp_1', name: 'Coll A' },
             { action: 'CREATE', id: 'temp_2', name: 'Coll B' },
@@ -117,6 +120,7 @@ describe('handleSyncVariables', () => {
       const result = await handleSyncVariables(
         {
           file_id: MOCK_FILE_KEY,
+          dry_run: false,
           variables: [
             { action: 'CREATE', id: 'temp_1', name: 'var-a', variable_collection_id: MOCK_COLLECTION.id, resolved_type: 'FLOAT' },
             { action: 'CREATE', id: 'temp_2', name: 'var-b', variable_collection_id: MOCK_COLLECTION.id, resolved_type: 'STRING' },
@@ -136,6 +140,7 @@ describe('handleSyncVariables', () => {
       await handleSyncVariables(
         {
           file_id: MOCK_FILE_KEY,
+          dry_run: false,
           variables: [
             { action: 'UPDATE', id: MOCK_VARIABLE.id, name: 'primary-600' },
           ],
@@ -156,6 +161,7 @@ describe('handleSyncVariables', () => {
       const result = await handleSyncVariables(
         {
           file_id: MOCK_FILE_KEY,
+          dry_run: false,
           variables: [
             { action: 'UPDATE', id: MOCK_VARIABLE.id, name: 'renamed' },
           ],
@@ -174,6 +180,7 @@ describe('handleSyncVariables', () => {
       await handleSyncVariables(
         {
           file_id: MOCK_FILE_KEY,
+          dry_run: false,
           variables: [
             { action: 'DELETE', id: MOCK_VARIABLE.id },
           ],
@@ -194,6 +201,7 @@ describe('handleSyncVariables', () => {
       const result = await handleSyncVariables(
         {
           file_id: MOCK_FILE_KEY,
+          dry_run: false,
           variable_collections: [
             { action: 'DELETE', id: MOCK_COLLECTION.id },
           ],
@@ -216,6 +224,7 @@ describe('handleSyncVariables', () => {
       const result = await handleSyncVariables(
         {
           file_id: MOCK_FILE_KEY,
+          dry_run: false,
           variable_collections: [
             { action: 'CREATE', id: 'temp_collection_1', name: 'Brand Colors' },
           ],
@@ -246,6 +255,7 @@ describe('handleSyncVariables', () => {
       const result = await handleSyncVariables(
         {
           file_id: MOCK_FILE_KEY,
+          dry_run: false,
           variables: [
             { action: 'UPDATE', id: MOCK_VARIABLE.id, name: 'renamed' },
           ],
@@ -308,6 +318,7 @@ describe('handleSyncVariables', () => {
       const result = await handleSyncVariables(
         {
           file_id: MOCK_FILE_KEY,
+          dry_run: false,
           variable_collections: [{ action: 'CREATE', id: 'temp_1', name: 'C' }],
           variables: [{ action: 'CREATE', id: 'temp_2', name: 'v', variable_collection_id: 'temp_1', resolved_type: 'STRING' }],
           variable_mode_values: [{ variable_id: 'temp_2', mode_id: '123:1', value: 'hello' }],
@@ -334,6 +345,7 @@ describe('handleSyncVariables', () => {
       const result = await handleSyncVariables(
         {
           file_id: MOCK_FILE_KEY,
+          dry_run: false,
           variable_mode_values: [
             { variable_id: MOCK_VARIABLE.id, mode_id: '123:1', value: 8 },
             { variable_id: MOCK_VARIABLE.id, mode_id: '123:2', value: 12 },
@@ -361,6 +373,7 @@ describe('handleSyncVariables', () => {
         handleSyncVariables(
           {
             file_id: MOCK_FILE_KEY,
+            dry_run: false,
             variables: largeVariables,
           },
           MOCK_TOKEN,
@@ -379,6 +392,7 @@ describe('handleSyncVariables', () => {
       await handleSyncVariables(
         {
           file_id: MOCK_FILE_KEY,
+          dry_run: false,
           variable_mode_values: [
             { variable_id: MOCK_VARIABLE.id, mode_id: '123:1', value: '#FF0000' },
           ],

@@ -6,6 +6,15 @@
  * at the API boundary in client.ts.
  */
 
+import type {
+  DevResource,
+  GetDevResourcesResponse as FigmaGetDevResourcesResponse,
+  PostDevResourcesRequestBody,
+  PostDevResourcesResponse as FigmaPostDevResourcesResponse,
+  PutDevResourcesRequestBody,
+  PutDevResourcesResponse as FigmaPutDevResourcesResponse,
+} from '@figma/rest-api-spec';
+
 // ─── Color Values ────────────────────────────────────────
 
 /** RGBA color with float channels 0–1 (Figma native format). */
@@ -137,30 +146,12 @@ export interface GetLocalVariablesResponse {
 
 // ─── Dev Resources Types ─────────────────────────────────
 
-export interface DevResourceCreateRequest {
-  name: string;
-  url: string;
-  file_key: string;
-  node_id: string;
-}
-
-export interface DevResourceUpdateRequest {
-  id: string;
-  name?: string;
-  url?: string;
-}
-
-export interface DevResourceResponse {
-  id: string;
-  name: string;
-  url: string;
-  file_key: string;
-  node_id: string;
-}
-
-export interface GetDevResourcesResponse {
-  dev_resources: DevResourceResponse[];
-}
+export type DevResourceCreateRequest = PostDevResourcesRequestBody['dev_resources'][number];
+export type DevResourceUpdateRequest = PutDevResourcesRequestBody['dev_resources'][number];
+export type DevResourceResponse = DevResource;
+export type GetDevResourcesResponse = FigmaGetDevResourcesResponse;
+export type PostDevResourcesResponse = FigmaPostDevResourcesResponse;
+export type PutDevResourcesResponse = FigmaPutDevResourcesResponse;
 
 // ─── Comments Types ──────────────────────────────────────
 

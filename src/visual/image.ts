@@ -22,10 +22,28 @@ export interface CropBox {
   height: number;
 }
 
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+export function assertValidPng(filePath: string, label = 'Image'): ImageSize {
+  if (!fs.existsSync(filePath)) throw new Error(`${label} does not exist: ${filePath}`);
+
+  const contents = fs.readFileSync(filePath);
+  if (contents.length < PNG_SIGNATURE.length || !contents.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+    throw new Error(`${label} must be a PNG file: ${filePath}`);
+  }
+
+  try {
+    const png = PNG.sync.read(contents);
+    return { width: png.width, height: png.height };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`${label} is not a valid PNG: ${filePath} (${reason})`);
+  }
+}
+
 export function identifyPng(filePath: string): ImageSize | null {
   if (!fs.existsSync(filePath)) return null;
-  const png = PNG.sync.read(fs.readFileSync(filePath));
-  return { width: png.width, height: png.height };
+  return assertValidPng(filePath);
 }
 
 export function comparePngRmse(aPath: string, bPath: string, diffPath?: string): PngRmseResult {

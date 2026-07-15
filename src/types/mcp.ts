@@ -21,11 +21,14 @@ export interface CacheEntry {
 
 export interface CSSMappedFill {
   fill_type: 'solid' | 'gradient' | 'image';
+  /** Exact paint color as #RRGGBB or #RRGGBBAA. null for non-solid paints. */
   value_hex: string | null;
+  /** Effective solid alpha, or source opacity for gradients/images. Gradient CSS already includes it; node opacity is separate. */
   opacity: number;
+  /** Generated reference to an observed CSS custom property; not an authoritative Figma variable. */
   css_variable: string | null;
   css_property: string;
-  /** CSS gradient/image value — present for gradient and image fills */
+  /** Exact CSS paint value. Solid values include paint alpha; gradients include it in stop alpha. */
   css_value: string | null;
   /** Gradient type from Figma — present for gradient fills */
   gradient_type: 'LINEAR' | 'RADIAL' | 'ANGULAR' | 'DIAMOND' | null;
@@ -38,10 +41,16 @@ export interface CSSMappedFill {
 }
 
 export interface CSSMappedStroke {
+  /** Exact stroke color as #RRGGBB or #RRGGBBAA. */
   value_hex: string;
+  /** Effective paint alpha. Never includes node opacity. */
+  opacity: number;
   weight: number;
+  /** Generated reference to an observed CSS custom property; not an authoritative Figma variable. */
   css_variable: string | null;
   css_property: string;
+  /** Exact CSS color including paint alpha. */
+  css_value: string;
   /** Stroke alignment: INSIDE, OUTSIDE, CENTER */
   alignment: 'INSIDE' | 'OUTSIDE' | 'CENTER';
   /** CSS hint: "border" for CENTER, "box-shadow-inset" for INSIDE, "outline" for OUTSIDE */
@@ -53,22 +62,27 @@ export interface CSSMappedStroke {
 export interface CSSMappedEffect {
   effect_type: string;
   css_value: string;
+  /** Generated reference to an observed CSS custom property; not an authoritative Figma variable. */
   css_variable: string | null;
   css_property: string;
 }
 
 export interface CSSMappedValue {
   value: number;
+  /** Generated reference to an observed CSS custom property; not an authoritative Figma variable. */
   css_variable: string | null;
   css_property: string;
 }
 
 export interface CSSMappedTypography {
   font_family: string;
+  /** Generated reference based on observed typography values. */
   font_family_css: string | null;
   font_size: number;
+  /** Generated reference based on observed typography values. */
   font_size_css: string | null;
   font_weight: number;
+  /** Generated reference based on observed typography values. */
   font_weight_css: string | null;
   line_height: string;
   /** Line-height in em units: "{lineHeightPx/fontSize}em" or "normal" */
@@ -80,6 +94,7 @@ export interface CSSMappedTypography {
   text_case: string;
   text_decoration: string;
   color_hex: string;
+  /** Generated reference based on an observed color value. */
   color_css: string | null;
 }
 
@@ -126,6 +141,7 @@ export interface AppliedStyles {
 export interface TokenHint {
   property: string;
   actual_value: number | string;
+  /** Nearest generated CSS custom property from observed values, not a Figma variable binding. */
   nearest_token: string;
   nearest_value: number | string;
   delta: number;
@@ -152,6 +168,7 @@ export interface TextSegment {
   start: number;
   end: number;
   color_hex: string;
+  /** Generated reference based on an observed color value. */
   color_css: string | null;
   font_family: string | null;
   font_size: number | null;
@@ -167,7 +184,17 @@ export interface NodeDetail {
   node_type: string;
   width: number;
   height: number;
+  /** X coordinate of absoluteBoundingBox in Figma canvas/global space. */
+  canvas_x: number;
+  /** Y coordinate of absoluteBoundingBox in Figma canvas/global space. */
+  canvas_y: number;
+  /** X coordinate in the immediate parent's coordinate space. null for a mapped root. */
+  parent_relative_x: number | null;
+  /** Y coordinate in the immediate parent's coordinate space. null for a mapped root. */
+  parent_relative_y: number | null;
+  /** @deprecated Canvas/global X alias. Use canvas_x; this is not parent-relative. */
   x: number;
+  /** @deprecated Canvas/global Y alias. Use canvas_y; this is not parent-relative. */
   y: number;
   visible: boolean;
   fills: CSSMappedFill[];
@@ -176,7 +203,7 @@ export interface NodeDetail {
   corner_radius: CSSMappedValue | null;
   /** Per-corner radii [top-left, top-right, bottom-right, bottom-left]. null when uniform or all zeros. */
   corner_radii: [number, number, number, number] | null;
-  /** Element-level opacity (0-1). Omitted from response when 1.0. */
+  /** Node/layer-level opacity (0-1), separate from paint alpha. Omitted when 1.0. */
   opacity?: number;
   /** Rotation in degrees. null when 0 or not applicable. */
   rotation: number | null;
@@ -186,7 +213,7 @@ export interface NodeDetail {
   blend_mode_css: string | null;
   /** Derived from clipsContent. */
   overflow: 'hidden' | 'visible';
-  /** "absolute" when node is not in auto-layout flow, "relative" otherwise. */
+  /** "relative" for auto-layout participants; "absolute" for manually positioned children. */
   position: 'absolute' | 'relative';
   layout: LayoutInfo | null;
   typography: CSSMappedTypography | null;
@@ -206,9 +233,9 @@ export interface NodeDetail {
   min_height?: number;
   /** Max height in px. Present only when set in Figma. */
   max_height?: number;
-  /** Figma shared styles applied to this node. */
+  /** Named Figma shared styles applied to this node. Shared styles are not variables. */
   applied_styles?: AppliedStyles;
-  /** Flags for values that don't exactly match any design token. */
+  /** Nearest-value suggestions derived from observed/generated values, not authoritative tokens. */
   token_hints?: TokenHint[];
 }
 

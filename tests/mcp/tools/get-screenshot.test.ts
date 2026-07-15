@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { handleGetScreenshot } from '../../../src/mcp/tools/get-screenshot.js';
 import { TokenCache } from '../../../src/mcp/cache.js';
 import type { AllTokens, ParsedNode, FigmaFile } from '../../../src/types/tokens.js';
@@ -45,8 +48,10 @@ function makeRawNode(): Node {
 
 function makeNodes(): ParsedNode[] {
   const raw = makeRawNode();
+  const duplicateNameRaw = { ...makeRawNode(), id: '1:4' } as unknown as Node;
   return [
     { node_id: '1:1', node_type: 'FRAME', name: 'My Frame', parent_id: null, depth: 0, raw },
+    { node_id: '1:4', node_type: 'FRAME', name: 'My Frame', parent_id: null, depth: 0, raw: duplicateNameRaw },
   ];
 }
 
@@ -77,8 +82,11 @@ describe('handleGetScreenshot', () => {
   let mockFetchFn: ReturnType<typeof vi.fn>;
   const mockFetchImages = vi.fn();
   const mockDownloadImage = vi.fn();
+  let outputRoot: string;
 
   beforeEach(() => {
+    outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-screenshot-'));
+    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputRoot;
     cache = new TokenCache();
     mockFetchFn = vi.fn().mockResolvedValue(makeFetchResult());
     vi.clearAllMocks();
@@ -90,9 +98,15 @@ describe('handleGetScreenshot', () => {
     process.env.FIGMA_TOKEN = 'test-token';
   });
 
+  afterEach(() => {
+    delete process.env.FIGMA_TOKEN;
+    delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
+    fs.rmSync(outputRoot, { recursive: true, force: true });
+  });
+
   it('returns correct response shape', async () => {
     const result = await handleGetScreenshot(
-      { file_id: 'test-file', node_id: '1:1', output_dir: '/tmp/figma-test' },
+      { file_id: 'test-file', node_id: '1:1', output_dir: 'screenshots' },
       cache,
       mockFetchFn,
       mockFetchImages,
@@ -103,6 +117,7 @@ describe('handleGetScreenshot', () => {
     expect(result.width).toBe(375);
     expect(result.height).toBe(812);
     expect(result.file_size_bytes).toBe(1024);
+    expect(path.basename(result.file_path)).toBe('my_frame_1_1_screenshot.png');
     expect(result.summary).toBeDefined();
     expect(result.summary.node_name).toBe('My Frame');
     expect(result.summary.node_type).toBe('FRAME');
@@ -125,7 +140,7 @@ describe('handleGetScreenshot', () => {
 
   it('extracts dominant fills from node', async () => {
     const result = await handleGetScreenshot(
-      { file_id: 'test-file', node_id: '1:1', output_dir: '/tmp/figma-test' },
+      { file_id: 'test-file', node_id: '1:1', output_dir: 'screenshots' },
       cache,
       mockFetchFn,
       mockFetchImages,
@@ -137,7 +152,7 @@ describe('handleGetScreenshot', () => {
 
   it('passes scale to fetchImages', async () => {
     await handleGetScreenshot(
-      { file_id: 'test-file', node_id: '1:1', scale: 2, output_dir: '/tmp/figma-test' },
+      { file_id: 'test-file', node_id: '1:1', scale: 2, output_dir: 'screenshots' },
       cache,
       mockFetchFn,
       mockFetchImages,
@@ -150,5 +165,32 @@ describe('handleGetScreenshot', () => {
       ['1:1'],
       { format: 'png', scale: 2 },
     );
+  });
+
+  it('uses node IDs to avoid collisions between nodes with the same name', async () => {
+    mockFetchImages.mockImplementation(async (_fileId, _token, nodeIds: string[]) =>
+      Object.fromEntries(nodeIds.map((nodeId) => [nodeId, `https://figma.com/render/${nodeId}`])),
+    );
+
+    const first = await handleGetScreenshot(
+      { file_id: 'test-file', node_id: '1:1', output_dir: 'screenshots' },
+      cache,
+      mockFetchFn,
+      mockFetchImages,
+      mockDownloadImage,
+    );
+    const second = await handleGetScreenshot(
+      { file_id: 'test-file', node_id: '1:4', output_dir: 'screenshots' },
+      cache,
+      mockFetchFn,
+      mockFetchImages,
+      mockDownloadImage,
+    );
+
+    expect(first.file_path).not.toBe(second.file_path);
+    expect(path.basename(first.file_path)).toContain('_1_1_');
+    expect(path.basename(second.file_path)).toContain('_1_4_');
+    expect(fs.existsSync(first.file_path)).toBe(true);
+    expect(fs.existsSync(second.file_path)).toBe(true);
   });
 });

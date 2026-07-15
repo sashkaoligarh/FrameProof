@@ -3,7 +3,7 @@
  *
  * Coverage:
  * - post_comment: success with node_id + coordinates, success without coordinates,
- *   client_meta FrameOffset format, Figma URL extraction, stderr logging
+ *   client_meta FrameOffset format, Figma URL extraction, redacted stderr logging
  * - reply_to_comment: success (returns comment_id, parent_id, message, created_at),
  *   404 for non-existent parent
  * - get_comments: success with threading (groups replies under parent),
@@ -151,7 +151,7 @@ describe('handlePostComment', () => {
   });
 
   describe('stderr logging', () => {
-    it('logs the comment message, node_id, and file_id to stderr', async () => {
+    it('logs metadata without logging the comment body', async () => {
       mockPostComment.mockResolvedValue(MOCK_COMMENT);
 
       const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -166,8 +166,8 @@ describe('handlePostComment', () => {
       );
 
       const logCalls = stderrSpy.mock.calls.map((c) => String(c[0]));
-      expect(logCalls.some((msg) => msg.includes('[write] POST comment:'))).toBe(true);
-      expect(logCalls.some((msg) => msg.includes('Review needed'))).toBe(true);
+      expect(logCalls.some((msg) => msg.includes('[write] POST comment'))).toBe(true);
+      expect(logCalls.some((msg) => msg.includes('Review needed'))).toBe(false);
       expect(logCalls.some((msg) => msg.includes('42:100'))).toBe(true);
       expect(logCalls.some((msg) => msg.includes(MOCK_FILE_KEY))).toBe(true);
 

@@ -4,8 +4,6 @@
  */
 
 import { z } from 'zod';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type { TokenCache, FetchCallback } from '../cache.js';
 import type { NodeDetail, NodeDetailDeduped } from '../../types/mcp.js';
 import { mapNodeToDetail } from '../mappers/css-mapper.js';
@@ -14,16 +12,24 @@ import { deduplicateStyles } from '../utils/style-dedup.js';
 import { collapseSvgGroups } from '../utils/svg-collapse.js';
 import { buildNodeSummary, type NodeSummary } from '../utils/node-summary.js';
 import { resolveParams } from '../utils/normalize-node-id.js';
+import { atomicWriteOutputFile } from '../utils/output-path.js';
+
+const MAX_DEPTH = 20;
+const MAX_RESPONSE_CHARS = 1_000_000;
 
 export const getNodeInfoSchema = {
   file_id: z.string().describe('Figma file ID or full Figma URL (node-id will be auto-extracted from URL if present)'),
   node_id: z.string().optional().describe('Target node ID (accepts "8077:4170" or "8077-4170"). If omitted, extracted from file_id URL.'),
-  depth: z.number().optional().default(5).describe('Max child depth (default: 5)'),
+  depth: z.number().finite().int().min(0).max(MAX_DEPTH).optional().default(5).describe(`Max child depth (0-${MAX_DEPTH}, default: 5)`),
   max_response_chars: z
     .number()
+    .finite()
+    .int()
+    .min(1)
+    .max(MAX_RESPONSE_CHARS)
     .optional()
     .default(DEFAULT_MAX_CHARS)
-    .describe('Max response size in chars; auto-trims if exceeded'),
+    .describe(`Max response size in chars (1-${MAX_RESPONSE_CHARS}); auto-trims if exceeded`),
   deduplicate_styles: z
     .boolean()
     .optional()
@@ -54,7 +60,6 @@ export interface GetNodeInfoSavedResult {
   saved_to: string;
   file_size_bytes: number;
   summary: NodeSummary;
-  _truncated?: boolean;
 }
 
 /**
@@ -92,35 +97,28 @@ export async function handleGetNodeInfo(
   // SVG collapse first, then dedup (per T030 pipeline order)
   detail = collapseSvgGroups(detail);
 
-  const maxChars = params.max_response_chars ?? DEFAULT_MAX_CHARS;
-  const trimResult = trimNodeDetail(detail, maxChars);
-
   // If save_to is specified, write full data to file and return summary
   if (params.save_to) {
     let dataToSave: NodeDetail | NodeDetailDeduped;
     if (params.deduplicate_styles) {
-      dataToSave = deduplicateStyles(trimResult.data);
+      dataToSave = deduplicateStyles(detail);
     } else {
-      dataToSave = trimResult.data;
+      dataToSave = detail;
     }
 
     const jsonStr = JSON.stringify(dataToSave, null, 2);
-    const dir = path.dirname(params.save_to);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(params.save_to, jsonStr, 'utf-8');
+    const savedTo = atomicWriteOutputFile(params.save_to, jsonStr);
 
     const result: GetNodeInfoSavedResult = {
-      saved_to: params.save_to,
+      saved_to: savedTo,
       file_size_bytes: Buffer.byteLength(jsonStr, 'utf-8'),
       summary: buildNodeSummary(detail),
     };
-    if (trimResult.truncated) {
-      result._truncated = true;
-    }
     return result;
   }
+
+  const maxChars = params.max_response_chars ?? DEFAULT_MAX_CHARS;
+  const trimResult = trimNodeDetail(detail, maxChars);
 
   if (params.deduplicate_styles) {
     const deduped = deduplicateStyles(trimResult.data);

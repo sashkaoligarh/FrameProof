@@ -1,22 +1,28 @@
 /**
  * MCP Prompt: layout_strategy
- * Rules for pixel-perfect layout from Figma design tokens.
+ * Rules for pixel-perfect layout from observed Figma values and variables.
  */
 
 export const LAYOUT_STRATEGY_NAME = 'layout_strategy';
 export const LAYOUT_STRATEGY_DESCRIPTION =
-  'Rules for pixel-perfect layout from Figma design tokens';
+  'Rules for pixel-perfect layout from observed Figma values and authoritative variables';
 
 export const LAYOUT_STRATEGY_MESSAGE = `When implementing a layout from a Figma design, follow these steps:
 
-1. FIRST call get_design_context to load the design system tokens
-2. For each component you need to implement:
+1. FIRST call get_design_context to load observed design values and generated CSS mappings
+2. When get_variables is available, call it to resolve authoritative Figma variables, collections, modes, and aliases
+3. For each component you need to implement:
    a. Call get_node_info with the component's node ID
-   b. Use the css_variable fields in the response directly in your code
-   c. Never hardcode color, spacing, typography, or shadow values
-3. Always use CSS custom properties: var(--color-xxx), var(--spacing-xxx), etc.
-4. If a value doesn't match any token, call search_token to find the closest match
-5. If no token exists for a value, explicitly tell the developer
+   b. Prefer an authoritative variable returned by get_variables when the node is bound to one
+   c. Otherwise use the exact observed value or a generated css_variable from the response
+4. Treat css_variable fields as generated references to observed values, not proof of a Figma variable binding
+5. Use search_token only to find similar observed/generated values; verify substitutions rather than applying them automatically
+
+Value semantics:
+- get_variables is authoritative for Figma variables, IDs, collections, modes, aliases, and values
+- get_design_tokens and get_css_variables derive values and CSS names from observed node properties
+- applied_styles identifies named Figma shared styles; a named style is not a Figma variable
+- token_hints contains nearest-value suggestions only; it does not establish designer intent or a variable binding
 
 Layout rules:
 - Use flexbox/grid to match Figma auto-layout (HORIZONTAL → flex-direction: row, VERTICAL → column)
@@ -29,7 +35,7 @@ Layout rules:
   - Prefer line_height_em and letter_spacing_em for responsive scaling
 
 Fills and backgrounds:
-- For solid fills: use css_variable or value_hex directly as background-color
+- For solid fills: prefer css_variable when it represents the exact alpha-aware value; otherwise use css_value
 - For gradient fills (fill_type: "gradient"): use css_value directly as background property
   - linear-gradient, radial-gradient, conic-gradient are all supported
 - For image fills (fill_type: "image"): call export_node_image for the asset, apply:
@@ -38,15 +44,20 @@ Fills and backgrounds:
 - Multi-fill nodes: apply fills in Figma array order (first fill = bottommost layer)
 
 Visual properties:
-- opacity: apply directly as CSS opacity (omitted when 1.0)
+- Node opacity: apply NodeDetail.opacity as CSS opacity (omitted when 1.0)
+- Paint opacity: fills/strokes already combine it with color or gradient-stop alpha; do not multiply NodeDetail.opacity into paint values
+- Image fill opacity may require a separate layer so it does not fade unrelated node content
 - rotation: apply as transform: rotate({value}deg). null means no rotation
 - blend_mode_css: apply as mix-blend-mode when non-null
 - overflow: "hidden" → overflow: hidden, "visible" → default
 
 Sizing and positioning:
 - layout.sizing_horizontal/sizing_vertical: FILL → width/height: 100%, HUG → auto, FIXED → explicit px
-- position: "absolute" → position: absolute with x/y as left/top
-- position: "relative" → element participates in auto-layout flow
+- canvas_x/canvas_y are absoluteBoundingBox coordinates in canvas/global space
+- parent_relative_x/parent_relative_y are coordinates in the immediate parent's coordinate space
+- x/y are deprecated canvas/global aliases; never use them as parent-relative offsets
+- position: "absolute" → manually positioned child; use parent_relative_x/parent_relative_y as left/top
+- position: "relative" → child participates in its parent's auto-layout flow; do not apply canvas coordinates as CSS offsets
 - constraints.horizontal: STRETCH → width: 100%, CENTER → margin: 0 auto
 - min_width/max_width/min_height/max_height: apply directly as CSS min-width, max-width, etc.
   These are critical for responsive behavior — never ignore them
@@ -73,13 +84,14 @@ Applied styles — IMPORTANT:
 - When applied_styles is present, it shows the Figma shared style name for fills, strokes, text, effects
 - Example: applied_styles.text.name = "Heading/H2" → use a matching CSS class
 - This reveals the semantic intent behind raw values
+- A shared style name is not an authoritative Figma variable or variable binding
 - Overrides on top of shared styles should be applied as inline overrides
 
 Token hints — IMPORTANT:
-- When token_hints is present, some values don't exactly match design tokens
+- When token_hints is present, some values don't exactly match the observed/generated value set
 - Example: { property: "padding-top", actual_value: 17, nearest_token: "var(--spacing-16)", delta: 1 }
-- Usually this means a designer error — use the nearest token value
-- If delta > 2px, verify with the designer whether it's intentional
+- nearest_token is a generated CSS custom-property suggestion, not an authoritative Figma variable
+- Preserve actual_value unless an authoritative variable binding or project convention justifies substitution
 
 Text with mixed styling — IMPORTANT:
 - When text_segments has multiple entries, the text has character-level style overrides
@@ -90,6 +102,6 @@ Text with mixed styling — IMPORTANT:
 Decorative and background elements — IMPORTANT:
 - Elements with position: "absolute" that have no text_content are usually decorative
 - These include: background shapes, gradient overlays, pattern images, floating icons
-- Verify their EXACT position (x, y) relative to the parent frame
+- Verify their exact parent_relative_x/parent_relative_y position; canvas_x/canvas_y are only for global comparison
 - Common mistake: ignoring these elements or misplacing them
 - Use z-index layering that matches Figma's layer order (first child = bottom layer)`;

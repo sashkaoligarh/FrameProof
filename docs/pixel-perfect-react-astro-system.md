@@ -1,6 +1,8 @@
 # Pixel-Perfect React/Astro System
 
-`figma_scaler` is now the control plane for strict Figma-to-code work in React, Next, and Astro projects. The intended use is not a one-shot screenshot glance. It is a continuous loop: extract exact design data, implement section by section, capture live UI, compare, fix, and repeat until the strict gate passes.
+`figma-scaler` is the control plane for strict Figma-to-code work in React, Next, and Astro projects. The intended use is not a one-shot screenshot glance. It is a continuous loop: extract exact design data, implement section by section, capture live UI, compare, fix, and repeat until the strict gate passes.
+
+Build the source checkout with `npm ci && npm run build`. This project does not load `.env` automatically; provide `FIGMA_TOKEN` and other configuration through the process environment or MCP client.
 
 ## Core Contract
 
@@ -8,6 +10,7 @@
 - Final closure requires fresh post-edit screenshots and `figma-scaler gate` PASS.
 - `FAIL` and final `REVIEW` are not acceptable closure states.
 - Save Figma artifacts in `.figma/` and visual audit artifacts in `.pixel-perfect/`.
+- Treat those artifacts as private design data even though the default directories are gitignored.
 - Use project tokens, fonts, shared components, and assets before adding raw values.
 - Follow Feature-Sliced Design by default: `shared`, `entities`, `features`, `widgets`, `pages`, `app`.
 - For Astro projects, map this to the actual project structure when it already exists, for example `components/ui`, `components/sections`, `components/pages`, `styles`, `layouts`, `pages`.
@@ -18,7 +21,7 @@
 Use these before writing UI code:
 
 1. `pixel_perfect_orchestration` prompt
-2. `pixel_perfect_orchestrator` tool
+2. `plan_pixel_perfect_workflow` tool
 3. `read_design_strategy` prompt
 4. `layout_strategy` prompt
 5. `get_document_structure`
@@ -52,7 +55,9 @@ For every section and breakpoint, repeat these passes until the gate passes:
 
 ## CLI Gate
 
-Use the gate from the target project root after building this package:
+The gate needs an installed Chrome or Chromium. Set `CHROME_BIN` or `CHROMIUM_BIN` when the executable is not in a standard Linux path.
+
+Use the gate after building this repository. The examples below assume `figma-scaler` has been explicitly linked or installed; from this source checkout, replace `figma-scaler` with `node /absolute/path/to/mcp-figma/dist/cli.js`:
 
 ```bash
 figma-scaler gate \
@@ -79,6 +84,15 @@ figma-scaler gate \
 
 The gate writes `REPORT.md`, `summary.json`, live screenshots, Figma references, DOM reports, and diff PNGs under `.pixel-perfect/figma-gate/`.
 
+`--real-flow` performs exact image comparison for every supplied breakpoint-specific reference. A single global reference covers desktop plus behavior-only ultrawide; it is not reused to fake tablet/mobile pixel coverage. The ultrawide viewport reuses the desktop reference only for responsive behavior, semantic visibility, and overflow checks and does not report RMSE when full-width dimensions differ.
+
+## Security Boundary
+
+- Use a read-only, least-privilege Figma token for extraction and visual checks.
+- The MCP server also registers remote mutation tools for variables, dev resources, and comments. Mutations are blocked unless `FIGMA_SCALER_ENABLE_WRITES=1`; leave it unset for read/export workflows.
+- MCP file-producing handlers are confined to `FIGMA_SCALER_OUTPUT_ROOT`, which defaults to a non-broad process working directory; filesystem root and user home are rejected. The standalone CLI parser and gate retain separate output flags.
+- Review [../SECURITY.md](../SECURITY.md) before processing private files or authenticated live pages.
+
 ## Closure Rules
 
 - Use `--real-flow --fail-on-review` for final block gates.
@@ -90,7 +104,7 @@ The gate writes `REPORT.md`, `summary.json`, live screenshots, Figma references,
 ## Anti-Hardcode Rules
 
 - Use `token_hints`, `applied_styles`, and existing project token files before adding raw values.
-- If delta is `<= 2px`, use the nearest token by default.
-- If delta is `> 2px`, raw value is allowed only when documented in the audit artifact.
+- Treat `token_hints` as non-authoritative suggestions derived from observed values.
+- Preserve the exact Figma value unless an authoritative Figma variable or verified project token intentionally replaces it.
 - Exact assets beat approximations: export real SVG icons and PNG images from Figma.
 - Exact screenshot overlays are diagnostic or last-resort; semantic markup plus exact assets is the default.

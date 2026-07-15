@@ -38,10 +38,29 @@ export function generateComponentsJSON(components: ComponentInfo[]): string {
   return JSON.stringify(components, null, 2);
 }
 
+function tokenRecord(): Record<string, unknown> {
+  return Object.create(null) as Record<string, unknown>;
+}
+
+function setToken(
+  result: Record<string, unknown>,
+  preferredKey: string,
+  value: unknown,
+): void {
+  const base = preferredKey || 'unnamed';
+  let key = base;
+  let suffix = 2;
+  while (Object.hasOwn(result, key)) {
+    key = `${base}-${suffix}`;
+    suffix++;
+  }
+  result[key] = value;
+}
+
 function buildColorsDTCG(colors: ColorToken[]): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
+  const result = tokenRecord();
   for (const color of colors) {
-    result[color.name] = {
+    setToken(result, color.name, {
       $type: 'color',
       $value: color.value_hex,
       $extensions: {
@@ -51,15 +70,15 @@ function buildColorsDTCG(colors: ColorToken[]): Record<string, unknown> {
           rgba: color.value_rgba,
         },
       },
-    };
+    });
   }
   return result;
 }
 
 function buildTypographyDTCG(tokens: TypographyToken[]): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
+  const result = tokenRecord();
   for (const t of tokens) {
-    result[t.name] = {
+    setToken(result, t.name, {
       $type: 'typography',
       $value: {
         font_family: t.font_family,
@@ -78,15 +97,15 @@ function buildTypographyDTCG(tokens: TypographyToken[]): Record<string, unknown>
           sample_text: t.sample_text,
         },
       },
-    };
+    });
   }
   return result;
 }
 
 function buildSpacingDTCG(tokens: SpacingToken[]): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
+  const result = tokenRecord();
   for (const s of tokens) {
-    result[`spacing-${s.value}`] = {
+    setToken(result, `spacing-${s.value}`, {
       $type: 'dimension',
       $value: `${s.value}px`,
       $extensions: {
@@ -95,15 +114,22 @@ function buildSpacingDTCG(tokens: SpacingToken[]): Record<string, unknown> {
           usage_count: s.usage_count,
         },
       },
-    };
+    });
   }
   return result;
 }
 
 function buildRadiusDTCG(tokens: RadiusToken[]): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
+  const result = tokenRecord();
+  const radiusCounts = new Map<number, number>();
+  for (const radius of tokens) {
+    radiusCounts.set(radius.value, (radiusCounts.get(radius.value) ?? 0) + 1);
+  }
   for (const r of tokens) {
-    result[`radius-${r.value}`] = {
+    const qualifier = (radiusCounts.get(r.value) ?? 0) > 1
+      ? `-${r.is_per_corner ? 'per-corner' : 'uniform'}`
+      : '';
+    setToken(result, `radius-${r.value}${qualifier}`, {
       $type: 'dimension',
       $value: `${r.value}px`,
       $extensions: {
@@ -112,15 +138,15 @@ function buildRadiusDTCG(tokens: RadiusToken[]): Record<string, unknown> {
           usage_count: r.usage_count,
         },
       },
-    };
+    });
   }
   return result;
 }
 
 function buildShadowsDTCG(tokens: ShadowToken[]): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
+  const result = tokenRecord();
   for (const s of tokens) {
-    result[s.name] = {
+    setToken(result, s.name, {
       $type: 'shadow',
       $value: {
         offset_x: `${s.offset_x}px`,
@@ -136,15 +162,15 @@ function buildShadowsDTCG(tokens: ShadowToken[]): Record<string, unknown> {
           css: s.css,
         },
       },
-    };
+    });
   }
   return result;
 }
 
 function buildGradientsDTCG(tokens: GradientToken[]): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
+  const result = tokenRecord();
   for (const g of tokens) {
-    result[g.name] = {
+    setToken(result, g.name, {
       $type: 'gradient',
       $value: {
         type: g.gradient_type,
@@ -160,7 +186,7 @@ function buildGradientsDTCG(tokens: GradientToken[]): Record<string, unknown> {
           stops_rgba: g.stops.map((s) => s.color_rgba),
         },
       },
-    };
+    });
   }
   return result;
 }

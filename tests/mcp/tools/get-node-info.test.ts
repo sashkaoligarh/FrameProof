@@ -8,8 +8,11 @@
  * - Nonexistent node returns error
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleGetNodeInfo } from '../../../src/mcp/tools/get-node-info.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { getNodeInfoSchema, handleGetNodeInfo } from '../../../src/mcp/tools/get-node-info.js';
 import { TokenCache } from '../../../src/mcp/cache.js';
 import type { CacheEntry } from '../../../src/types/mcp.js';
 import type { FigmaFile, AllTokens, ParsedNode } from '../../../src/types/tokens.js';
@@ -147,10 +150,17 @@ function makeCacheEntry(fileId: string, nodes: ParsedNode[]): CacheEntry {
 describe('handleGetNodeInfo', () => {
   let cache: TokenCache;
   let mockFetchFn: ReturnType<typeof vi.fn>;
+  let outputRoot: string | undefined;
 
   beforeEach(() => {
     cache = new TokenCache();
     mockFetchFn = vi.fn();
+  });
+
+  afterEach(() => {
+    delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
+    if (outputRoot) fs.rmSync(outputRoot, { recursive: true, force: true });
+    outputRoot = undefined;
   });
 
   it('returns frame node with dimensions, layout, and fills with css_variable', async () => {
@@ -235,5 +245,51 @@ describe('handleGetNodeInfo', () => {
         mockFetchFn,
       ),
     ).rejects.toThrow(/not found/i);
+  });
+
+  it('saves the full depth-limited tree before response trimming', async () => {
+    const grandchildNode = makeRawNode({ id: '10:4', name: 'Grandchild', children: [] });
+    const childNode = makeRawNode({ id: '10:3', name: 'Child', children: [grandchildNode] });
+    const parentNode = makeRawNode({ id: '10:1', name: 'Parent', children: [childNode] });
+    const nodes: ParsedNode[] = [
+      { node_id: '10:1', node_type: 'FRAME', name: 'Parent', parent_id: null, depth: 0, raw: parentNode },
+      { node_id: '10:3', node_type: 'FRAME', name: 'Child', parent_id: '10:1', depth: 1, raw: childNode },
+      { node_id: '10:4', node_type: 'FRAME', name: 'Grandchild', parent_id: '10:3', depth: 2, raw: grandchildNode },
+    ];
+    const entry = makeCacheEntry('file-1', nodes);
+    mockFetchFn.mockResolvedValue({ file: entry.file, nodes: entry.nodes, tokens: entry.tokens });
+    outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-node-info-'));
+    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputRoot;
+
+    const savedResult = await handleGetNodeInfo(
+      { file_id: 'file-1', node_id: '10:1', depth: 2, max_response_chars: 1, save_to: 'node.json' },
+      cache,
+      mockFetchFn,
+    );
+    const saved = JSON.parse(fs.readFileSync(savedResult.saved_to, 'utf8'));
+
+    expect(saved.children[0].node_id).toBe('10:3');
+    expect(saved.children[0].children[0].node_id).toBe('10:4');
+    expect(savedResult).not.toHaveProperty('_truncated');
+    expect(savedResult.summary.children_count).toBe(2);
+
+    const responseResult = await handleGetNodeInfo(
+      { file_id: 'file-1', node_id: '10:1', depth: 2, max_response_chars: 1 },
+      cache,
+      mockFetchFn,
+    );
+    expect(responseResult).toMatchObject({ _truncated: true });
+    expect(responseResult.node.children).toEqual([]);
+  });
+
+  it('bounds depth and max_response_chars to finite integer ranges', () => {
+    expect(getNodeInfoSchema.depth.safeParse(-1).success).toBe(false);
+    expect(getNodeInfoSchema.depth.safeParse(1.5).success).toBe(false);
+    expect(getNodeInfoSchema.depth.safeParse(Infinity).success).toBe(false);
+    expect(getNodeInfoSchema.depth.safeParse(21).success).toBe(false);
+    expect(getNodeInfoSchema.max_response_chars.safeParse(0).success).toBe(false);
+    expect(getNodeInfoSchema.max_response_chars.safeParse(10.5).success).toBe(false);
+    expect(getNodeInfoSchema.max_response_chars.safeParse(Infinity).success).toBe(false);
+    expect(getNodeInfoSchema.max_response_chars.safeParse(1_000_001).success).toBe(false);
   });
 });

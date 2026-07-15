@@ -1,0 +1,39 @@
+name: Bug report
+description: Report a reproducible problem in figma-scaler
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Do not include tokens, private Figma URLs or IDs, cookies, or proprietary screenshots. Report vulnerabilities through SECURITY.md.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Provide minimal, sanitized commands or steps.
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Source commit
+      description: Provide the output of `git rev-parse --short HEAD` for the checkout that reproduced the issue.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Node.js, OS, and browser versions
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      render: shell

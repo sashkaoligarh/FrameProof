@@ -1,416 +1,169 @@
-# Figma Scaler — Руководство по использованию
+# Usage Reference
 
-## Сводная таблица: все параметры всех MCP-инструментов
+This reference describes the current TypeScript source. Build a source clone with `npm ci && npm run build`, then invoke the CLI as `node dist/cli.js`. Examples using a globally installed `figma-scaler` binary are equivalent only if you have explicitly linked or installed this checkout.
 
-Общий параметр для всех инструментов — `file_id` (ID файла Figma или полный URL).
+The project does not load `.env` files. Export variables in the shell, process manager, or MCP client configuration.
 
-| Параметр | Тип | Где используется | Описание |
-|----------|-----|-----------------|----------|
-| `file_id` | `string` | Figma read/write и pixel-perfect инструменты | ID файла Figma или полный URL. Из URL автоматически извлекается file_id и node_id |
-| `node_id` | `string?` | `get_node_info`, `get_nodes_info`, `export_node_image`, `get_screenshot`, `get_frame_overview`, `batch_screenshots`, `export_page_analysis` | ID ноды. Автоматически извлекается из URL, если не указан явно. Формат: `8077:4170` или `8077-4170` |
-| `node_ids` | `string[]` | `get_nodes_info` | Массив ID нод для пакетного запроса |
-| `page` | `string?` | `get_design_tokens` | Фильтр по имени страницы |
-| `format` | `string?` | `export_node_image` (`svg\|png\|jpg\|pdf`, дефолт `png`), `export_page_analysis` (`markdown\|json`, дефолт `markdown`) | Формат вывода |
-| `scale` | `number?` | `export_node_image`, `get_screenshot`, `batch_screenshots` | Масштаб для растровых форматов: 1-4 (дефолт `1`) |
-| `depth` | `number?` | `get_node_info` (дефолт `5`), `get_nodes_info` (дефолт `3`) | Максимальная глубина обхода дочерних нод |
-| `section_depth` | `number?` | `export_page_analysis` (дефолт `4`) | Глубина анализа секций |
-| `output_dir` | `string?` | `export_node_image`, `get_screenshot`, `batch_screenshots` | Директория для сохранения файлов (дефолт `.figma`) |
-| `output_path` | `string?` | `export_page_analysis` | Путь выходного файла (дефолт `.figma/page-analysis.md`) |
-| `save_to` | `string?` | `get_design_tokens`, `get_node_info`, `get_nodes_info`, `get_css_variables` | Сохранить результат в файл, вернуть краткую сводку вместо полных данных |
-| `compress` | `boolean?` | `export_node_image`, `get_screenshot`, `batch_screenshots` | Сжать через TinyJPG API. Требует `TINYJPG_TOKEN`. Дефолт `false` |
-| `force_refresh` | `boolean?` | `get_design_tokens` | Обойти кэш (дефолт `false`) |
-| `include_hidden` | `boolean?` | `batch_screenshots` | Включить скрытые дочерние элементы (дефолт `false`) |
-| `categories` | `string[]?` | `get_design_tokens` | Категории токенов: `colors`, `gradients`, `typography`, `spacing`, `radii`, `shadows`, `images`, `components`. По умолчанию все кроме `components` и `images` |
-| `query` | `string` | `search_token` | Значение для поиска: hex-цвет, число, имя шрифта |
-| `category` | `string?` | `search_token` | Фильтр категории: `color`, `typography`, `spacing`, `radius`, `shadow`, `all` (дефолт `all`) |
-| `max_response_chars` | `number?` | `get_node_info` (дефолт `20000`), `get_nodes_info` | Макс. размер ответа в символах. Обрезается при превышении |
-| `deduplicate_styles` | `boolean?` | `get_node_info`, `get_nodes_info` | Заменить повторяющиеся fills/strokes хэш-ссылками для уменьшения размера (дефолт `false`) |
-
-### Какой инструмент поддерживает какие параметры
-
-```
-                          file_id  node_id  scale  compress  save_to  depth  format  output_dir
-get_design_tokens            *                                  *
-get_node_info                *       *                          *       *
-get_nodes_info               *      []*                         *       *
-get_css_variables             *                                  *
-export_node_image             *       *       *       *                         *       *
-get_document_structure        *
-get_design_context            *
-search_token                  *
-get_screenshot                *       *       *       *                                 *
-get_frame_overview            *       *
-batch_screenshots             *       *       *       *                                 *
-export_page_analysis          *       *                                         *
-pixel_perfect_orchestrator    *       *
-```
-
----
-
-## Переменные окружения
-
-| Переменная | Обязательная | Описание |
-|------------|-------------|----------|
-| `FIGMA_TOKEN` | Да | Персональный токен доступа: https://www.figma.com/developers/api#access-tokens |
-| `TINYJPG_TOKEN` | Нет | Токен TinyJPG API для сжатия изображений: https://tinypng.com/developers |
-
----
-
-## CLI (командная строка)
+## CLI: Doctor
 
 ```bash
-figma-scaler parse <fileIdOrUrl> [опции]
+node dist/cli.js doctor [--json]
 ```
 
-### Опции
+`doctor` checks Node.js `^20.19.0` or `>=22.12.0`, `FIGMA_TOKEN` presence, Chrome/Chromium discovery, and whether the configured `FIGMA_SCALER_OUTPUT_ROOT` is writable and usable as the MCP sandbox. Node.js 21 and 22.0-22.11 are rejected to match the locked Vite requirement. The command reports only credential presence, never values. A missing `TINYJPG_TOKEN` is a non-blocking warning because compression is optional. The command exits nonzero only when a blocking check fails; `--json` emits `{ "ok", "checks" }` for automation.
 
-| Флаг | По умолчанию | Описание |
-|------|-------------|----------|
-| `-t, --token <token>` | `$FIGMA_TOKEN` | Токен Figma API |
-| `-o, --output <dir>` | `./figma-output` | Директория для результатов |
-| `-f, --format <format>` | `all` | Формат вывода: `all`, `json`, `css`, `context` |
-| `-p, --page <name>` | — | Фильтр по имени страницы |
-| `-n, --node <id>` | — | Фильтр по ID ноды |
-| `--include-hidden` | `false` | Включить скрытые слои |
-| `--export-images` | `false` | Скачать изображения |
-| `--image-format <formats>` | `svg,png` | Форматы через запятую: `svg`, `png`, `jpg`, `pdf` |
-| `--image-scale <scale>` | `1` | Масштаб для растровых форматов (1-4) |
-| `--compress` | `false` | Сжать растровые изображения через TinyJPG API |
-
-Когда `--compress` включён и `--image-scale` не указан явно, масштаб автоматически устанавливается в **2x**.
-
-### Примеры
+## CLI: Parse
 
 ```bash
-# Извлечь токены
-figma-scaler parse https://www.figma.com/design/ABC123/MyDesign
-
-# Экспорт изображений со сжатием
-figma-scaler parse ABC123 --export-images --image-format jpg --compress
-
-# Фильтр по странице, включая скрытые слои
-figma-scaler parse ABC123 --page "Mobile" --include-hidden --format json
+node dist/cli.js parse <fileIdOrUrl> [options]
 ```
 
-### Strict visual gate
+| Option | Default | Description |
+|---|---|---|
+| `-t, --token <token>` | `FIGMA_TOKEN` | Discouraged compatibility option because process arguments can expose secrets. Prefer `FIGMA_TOKEN`. |
+| `-o, --output <dir>` | `./figma-output` | Generated output directory. |
+| `-f, --format <format>` | `all` | `all`, `json`, `css`, or `context`. A manifest is always written. |
+| `-p, --page <name>` | none | Include only a named page. |
+| `-n, --node <id>` | none | Include only a node ID. |
+| `--include-hidden` | `false` | Include hidden layers. |
+| `--export-images` | `false` | Download extracted image assets. |
+| `--image-format <formats>` | `svg,png` | Comma-separated `svg`, `png`, `jpg`, or `pdf`. |
+| `--image-scale <scale>` | `1` | Finite PNG/JPG scale from `1` through `4`. If omitted with `--compress`, the effective scale is `2`. |
+| `--compress` | `false` | Compress eligible PNG/JPG output through TinyJPG/Tinify. |
+
+Parse exit codes are `0` for success, `1` for input/general errors, `2` for Figma API errors, and `3` for detected filesystem errors.
+
+## CLI: Visual Gate
 
 ```bash
-figma-scaler gate \
-  --page-url "http://localhost:3000/pricing" \
-  --selector ".pricing-hero" \
-  --figma-url "https://www.figma.com/design/FILE/Name?node-id=1-2" \
-  --real-flow \
-  --fail-on-review
+node dist/cli.js gate --selector <css-selector> [page options] [reference options]
 ```
 
-`gate` сохраняет live/Figma screenshots, DOM-отчёты, diff PNG, `REPORT.md` и `summary.json` в `.pixel-perfect/figma-gate/`. Финальное закрытие pixel-perfect задач должно использовать `--real-flow --fail-on-review`.
+`--selector` is required. Supply `--page-url`, or use `--route` with `--base-url`. Supply at least one Figma URL or local image reference.
 
-### Коды выхода
+| Option | Default | Description |
+|---|---|---|
+| `--page-url <url>` | none | Absolute live-page URL. |
+| `--route <route>` | `/` | Route resolved against `--base-url`. |
+| `--base-url <url>` | `http://localhost:3000` | Base for `--route`. |
+| `--selector <selector>` | required | Live CSS selector to capture. |
+| `--figma-url <url>` | none | Figma node reference for all viewports. |
+| `--figma-url-desktop <url>` | none | Desktop Figma node reference. |
+| `--figma-url-tablet <url>` | none | Tablet Figma node reference. |
+| `--figma-url-mobile <url>` | none | Mobile Figma node reference. |
+| `--figma-image <path>` | none | Local PNG reference for all viewports. |
+| `--figma-image-desktop <path>` | none | Desktop local PNG reference. |
+| `--figma-image-tablet <path>` | none | Tablet local PNG reference. |
+| `--figma-image-mobile <path>` | none | Mobile local PNG reference. |
+| `--viewports <list>` | preset-dependent | Comma-separated `desktop`, `tablet`, `mobile`, or `ultrawide`. |
+| `--output-dir <dir>` | `.pixel-perfect/figma-gate` | Artifact root. |
+| `--name <name>` | selector | Stable portion of the timestamped run name. |
+| `--rmse-threshold <number>` | `0.025` | Finite normalized RMSE pass threshold from `0` through `1`. |
+| `--size-tolerance <number>` | `2` | Nonnegative integer image-dimension tolerance in pixels. |
+| `--wait-ms <number>` | `500` | Nonnegative integer wait after page load. |
+| `--real-flow` | `false` | Check every supplied exact breakpoint reference and add behavior-only ultrawide when desktop exists. A single global reference covers desktop plus ultrawide, not invented tablet/mobile references. |
+| `--soft-size-mismatch` | `false` | Report size mismatch as `REVIEW` instead of `FAIL`. |
+| `--fail-on-review` | `false` | Exit nonzero for `REVIEW` as well as `FAIL`. |
 
-| Код | Значение |
-|-----|----------|
-| `0` | Успех |
-| `1` | Общая ошибка |
-| `2` | Ошибка Figma API |
-| `3` | Ошибка файловой системы |
+The gate needs an installed Chrome/Chromium. It checks `CHROME_BIN`, then `CHROMIUM_BIN`, then common Linux paths. It writes screenshots, DOM reports, diffs, `REPORT.md`, and `summary.json` below the output directory.
 
----
-
-## MCP-сервер
-
-### Запуск
+## MCP Server
 
 ```bash
-npm run build:mcp
+npm run build
 npm run mcp:start
 ```
 
-Транспорт: **stdio** (stdout = MCP-сообщения, stderr = логи)
+The MCP transport is stdio. Protocol messages use stdout and logs use stderr. The in-memory Figma parse/token cache has a 30-minute TTL.
 
----
+Parameter notation below uses `?` for optional parameters. Defaults are shown as `=value`. `file_id` accepts a file ID or full Figma URL; tools with an optional `node_id` can usually extract `node-id` from that URL.
 
-## MCP-инструменты (13 штук)
+### Read, Export, and Orchestration Tools (13)
 
-### 1. `get_design_tokens`
+| Tool | Parameters |
+|---|---|
+| `get_design_tokens` | `file_id`, `page?`, `node_id?`, `force_refresh?=false`, `categories?`, `save_to?` |
+| `get_node_info` | `file_id`, `node_id?`, `depth?=5`, `max_response_chars?=80000`, `deduplicate_styles?=false`, `save_to?` |
+| `get_nodes_info` | `file_id`, `node_ids`, `depth?=3`, `max_response_chars?=80000`, `deduplicate_styles?=false`, `save_to?` |
+| `get_css_variables` | `file_id`, `save_to?` |
+| `export_node_image` | `file_id`, `node_id?`, `format?=png`, `scale?=1`, `output_dir?=.figma`, `compress?=false` |
+| `get_document_structure` | `file_id` |
+| `get_design_context` | `file_id` |
+| `search_token` | `file_id`, `query`, `category?=all` |
+| `get_screenshot` | `file_id`, `node_id?`, `scale?=1`, `output_dir?=.figma`, `compress?=false` |
+| `get_frame_overview` | `file_id`, `node_id?` |
+| `batch_screenshots` | `file_id`, `node_id?`, `scale?=1`, `output_dir?=.figma`, `include_hidden?=false`, `compress?=false` |
+| `export_page_analysis` | `file_id`, `node_id?`, `output_path?=.figma/page-analysis.md`, `format?=markdown`, `section_depth?=4` |
+| `plan_pixel_perfect_workflow` | `file_id`, `node_id?`, `project_root?`, `framework?=auto`, `architecture?=feature-sliced`, `route?`, `page_url?`, `base_url?=http://localhost:3000`, `selectors?`, `cli_command?`, `output_dir?=.figma/pixel-perfect-orchestration`, `max_passes?=12`, `real_flow?=true`, `fail_on_review?=true` |
 
-Извлечь дизайн-токены из файла Figma.
+`categories` accepts `colors`, `gradients`, `typography`, `spacing`, `radii`, `shadows`, `images`, and `components`; the default excludes the potentially large `images` and `components` categories. `search_token.category` accepts `color`, `typography`, `spacing`, `radius`, `shadow`, or `all`. Image format accepts `svg`, `png`, `jpg`, or `pdf`.
 
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `file_id` | `string` | — | ID файла Figma или полный URL |
-| `page` | `string?` | — | Фильтр по имени страницы |
-| `node_id` | `string?` | — | Фильтр по ID ноды |
-| `force_refresh` | `boolean?` | `false` | Обойти кэш |
-| `categories` | `string[]?` | все кроме `components`, `images` | Категории: `colors`, `gradients`, `typography`, `spacing`, `radii`, `shadows`, `images`, `components` |
-| `save_to` | `string?` | — | Сохранить JSON в файл, вернуть краткую сводку |
+These tools do not mutate the remote Figma file, but several write local files. MCP output paths are resolved below `FIGMA_SCALER_OUTPUT_ROOT`, which defaults to the server working directory unless that directory is the filesystem root or user home. Broad roots, traversal, and symlink escapes are rejected.
 
----
+`plan_pixel_perfect_workflow` returns `mode: "plan_only"`. It fetches Figma data, inventories sections, and creates only `RUNBOOK.md` and `inventory.json` under `output_dir`, resolved relative to `project_root`. Its `required_artifacts`, `final_gate_argv`, and POSIX-only display commands describe work to perform separately; the tool does not edit application code, create those extraction/gate artifacts, capture the live page, execute commands, or prove visual completion. Set `cli_command` to an argv prefix such as `["node", "/checkout/dist/cli.js"]` when automatic source-checkout detection is unavailable. `project_root` and all generated paths must remain inside `FIGMA_SCALER_OUTPUT_ROOT`. `max_passes` is an integer from 1 to 100; `selectors` accepts up to 100 non-empty selectors of at most 512 characters each.
 
-### 2. `get_node_info`
+### Variables Tools (6)
 
-Подробная информация о ноде: CSS-маппинги, constraints, стили, token hints.
+| Tool | Effect | Parameters |
+|---|---|---|
+| `get_variables` | Remote read | `file_id` |
+| `create_variable_collection` | **Remote write** | `file_id`, `name`, `modes?` |
+| `create_variable` | **Remote write** | `file_id`, `collection_id`, `name`, `resolved_type`, `values_by_mode?`, `scopes?` |
+| `update_variable` | **Remote write** | `file_id`, `variable_id`, `name?`, `values_by_mode?`, `scopes?` |
+| `delete_variable` | **Remote write unless dry-run** | `file_id`, `variable_id`, `dry_run?=true` |
+| `sync_variables` | **Remote batch write unless dry-run** | `file_id`, `variable_collections?`, `variable_modes?`, `variables?`, `variable_mode_values?`, `dry_run?=true` |
 
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `file_id` | `string` | — | ID файла или URL (node-id извлекается из URL автоматически) |
-| `node_id` | `string?` | — | ID целевой ноды (`8077:4170` или `8077-4170`) |
-| `depth` | `number?` | `5` | Максимальная глубина потомков |
-| `max_response_chars` | `number?` | `20000` | Макс. размер ответа в символах; обрезается при превышении |
-| `deduplicate_styles` | `boolean?` | `false` | Заменить повторяющиеся fills/strokes хэш-ссылками |
-| `save_to` | `string?` | — | Сохранить JSON в файл, вернуть краткую сводку |
+Variables API operations require the relevant Figma Enterprise plan and `file_variables:read` or `file_variables:write` scope. `resolved_type` accepts `COLOR`, `FLOAT`, `STRING`, or `BOOLEAN`. Color mode values accept hex strings or RGBA objects where supported. Non-dry-run mutations also require `FIGMA_SCALER_ENABLE_WRITES=1`.
 
----
+`sync_variables` action objects use `action: CREATE | UPDATE | DELETE` and the exact snake_case fields shown by the MCP schema: `variable_collection_id`, `resolved_type`, `hidden_from_publishing`, `variable_id`, and `mode_id`.
 
-### 3. `get_nodes_info`
+### Dev Resource Tools (4)
 
-Пакетная версия `get_node_info` для нескольких нод.
+| Tool | Effect | Parameters |
+|---|---|---|
+| `list_dev_resources` | Remote read | `file_id`, `node_id?` |
+| `create_dev_resource` | **Remote write** | `file_id`, `node_id`, `name`, `url` |
+| `update_dev_resource` | **Remote write** | `resource_id`, `name?`, `url?` |
+| `delete_dev_resource` | **Remote write** | `file_id`, `resource_id` |
 
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `file_id` | `string` | — | ID файла или URL |
-| `node_ids` | `string[]` | — | Массив ID нод |
-| `depth` | `number?` | `3` | Максимальная глубина потомков |
-| `max_response_chars` | `number?` | — | Макс. размер ответа |
-| `deduplicate_styles` | `boolean?` | `false` | Дедупликация стилей |
-| `save_to` | `string?` | — | Сохранить JSON в файл |
+These require `file_dev_resources:read` or `file_dev_resources:write` as appropriate. Figma limits dev resources to 10 per node. Create, update, and delete also require `FIGMA_SCALER_ENABLE_WRITES=1`.
 
----
+### Comment Tools (3)
 
-### 4. `get_css_variables`
+| Tool | Effect | Parameters |
+|---|---|---|
+| `get_comments` | Remote read | `file_id` |
+| `post_comment` | **Remote write** | `file_id`, `message`, `node_id?`, `x?`, `y?` |
+| `reply_to_comment` | **Remote write** | `file_id`, `comment_id`, `message` |
 
-Сгенерировать CSS Custom Properties из дизайн-токенов.
+These require `comments:read` or `comments:write` as appropriate. Posting and replying also require `FIGMA_SCALER_ENABLE_WRITES=1`. If `post_comment.node_id` is supplied, omitted `x` and `y` offsets default to zero.
 
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `file_id` | `string` | — | ID файла или URL |
-| `save_to` | `string?` | — | Путь для сохранения CSS (напр. `.figma/design-system.css`) |
+### Prompts (5)
 
----
+- `layout_strategy`
+- `read_design_strategy`
+- `token_usage_rules`
+- `write_design_strategy`
+- `pixel_perfect_orchestration`
 
-### 5. `export_node_image`
+### Resource (1)
 
-Экспорт ноды как изображения (SVG, PNG, JPG или PDF).
+`figma://tokens/{file_id}` returns tokens already held in the server's in-memory cache. Call `get_design_tokens` or another fetching tool first. The resource is not persistent across server restarts.
 
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `file_id` | `string` | — | ID файла или URL |
-| `node_id` | `string?` | — | Нода для экспорта (извлекается из URL) |
-| `format` | `svg \| png \| jpg \| pdf` | `png` | Формат изображения |
-| `scale` | `number?` | `1` | Масштаб для растровых форматов (1-4) |
-| `output_dir` | `string?` | `.figma` | Директория для сохранения |
-| `compress` | `boolean?` | `false` | Сжать через TinyJPG (нужен `TINYJPG_TOKEN`) |
+## Environment
 
-**Ответ** включает `compression?: CompressionResult` при сжатии, `warning?` если токен отсутствует.
+| Variable | Required | Behavior |
+|---|---|---|
+| `FIGMA_TOKEN` | For Figma API access | Used by CLI, MCP, and Figma URL references in the gate. |
+| `TINYJPG_TOKEN` | Only for compression | Used when compression is requested; without it, eligible tools warn and save the original. |
+| `CHROME_BIN` | Gate if browser is not auto-detected | Absolute Chrome executable path. |
+| `CHROMIUM_BIN` | Gate if browser is not auto-detected | Absolute Chromium executable path. |
+| `FIGMA_SCALER_COOKIES_JSON` | No | JSON cookie array for authenticated live-page capture. Treat cookie values as secrets. |
+| `FIGMA_SCALER_OUTPUT_ROOT` | No | Safe root for MCP file-producing handlers; defaults to a non-broad process working directory. Filesystem root and user home are rejected. Absolute paths must be within it. Parser and gate output flags remain separate. |
+| `FIGMA_SCALER_ENABLE_WRITES` | No | Remote mutations are blocked unless the value is exactly `1`; write tools remain listed but return an error while disabled. |
 
----
+TinyJPG/Tinify receives image bytes when compression is enabled. Compression failure is non-blocking and preserves the original image where the calling tool supports fallback.
 
-### 6. `get_document_structure`
+## Artifact Privacy
 
-Обзор файла Figma: страницы, фреймы верхнего уровня, количество компонентов.
-
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `file_id` | `string` | — | ID файла или URL |
-
----
-
-### 7. `get_design_context`
-
-Оптимизированная для AI сводка дизайн-системы в формате markdown.
-
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `file_id` | `string` | — | ID файла или URL |
-
----
-
-### 8. `search_token`
-
-Поиск дизайн-токенов по значению (hex-цвет, число, имя шрифта).
-
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `file_id` | `string` | — | ID файла или URL |
-| `query` | `string` | — | Значение для поиска (`#FF0000`, `16`, `Inter`) |
-| `category` | `string?` | `all` | Фильтр: `color`, `typography`, `spacing`, `radius`, `shadow`, `all` |
-
-Возвращает до 5 ближайших совпадений, отсортированных по дистанции.
-
----
-
-### 9. `get_screenshot`
-
-Скриншот фрейма со структурной сводкой.
-
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `file_id` | `string` | — | ID файла или URL |
-| `node_id` | `string?` | — | Нода для скриншота (извлекается из URL) |
-| `scale` | `number?` | `1` | Масштаб экспорта (1-4) |
-| `output_dir` | `string?` | `.figma` | Директория для сохранения |
-| `compress` | `boolean?` | `false` | Сжать через TinyJPG (нужен `TINYJPG_TOKEN`) |
-
-**Ответ** включает структурную сводку: `node_name`, `node_type`, размеры, `child_count`, `layout_mode`, `dominant_fills`.
-
----
-
-### 10. `get_frame_overview`
-
-Легковесный обзор дочерних элементов фрейма: имена, типы, размеры, отступы, ссылки на компоненты.
-
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `file_id` | `string` | — | ID файла или URL |
-| `node_id` | `string?` | — | Родительский фрейм (извлекается из URL) |
-
-**Ответ на каждый дочерний элемент**: `node_id`, `name`, `node_type`, размеры (width, height, x, y), `visible`, `has_auto_layout`, `layout_mode`, `has_fills`, `has_images`, `has_gradients`, `has_text`, `text_preview`, `is_component_instance`, `main_component_name`, `position` (absolute/relative), `overflow` (hidden/visible), `opacity`, `gap_to_next` (отступ до следующего соседа в px).
-
----
-
-### 11. `batch_screenshots`
-
-Скриншоты всех прямых потомков фрейма за один вызов.
-
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `file_id` | `string` | — | ID файла или URL |
-| `node_id` | `string?` | — | Родительский фрейм (извлекается из URL) |
-| `scale` | `number?` | `1` | Масштаб экспорта (1-4) |
-| `output_dir` | `string?` | `.figma` | Директория для сохранения |
-| `include_hidden` | `boolean?` | `false` | Включить скрытые потомки |
-| `compress` | `boolean?` | `false` | Сжать через TinyJPG (нужен `TINYJPG_TOKEN`) |
-
-**Ответ** включает `compression_stats?: CompressionStats` — общая статистика сжатия по всем скриншотам.
-
----
-
-### 12. `export_page_analysis`
-
-Полный анализ страницы, сохранённый в файл (markdown или JSON). Включает CSS-маппинги и дизайн-заметки.
-
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `file_id` | `string` | — | ID файла или URL |
-| `node_id` | `string?` | — | Корневой фрейм (извлекается из URL) |
-| `output_path` | `string?` | `.figma/page-analysis.md` | Путь выходного файла |
-| `format` | `markdown \| json` | `markdown` | Формат вывода |
-| `section_depth` | `number?` | `4` | Глубина анализа секций |
-
-**Категории дизайн-заметок**:
-
-| Категория | Описание |
-|-----------|----------|
-| `HIDDEN` | Проблемы с видимостью секций |
-| `IMAGE_FILL` | Фоновые изображения с позиционированием |
-| `MIXED_TEXT_COLOR` | Многоцветный текст, требующий `<span>` |
-| `ABSOLUTE_ELEMENT` | Абсолютно позиционированные декоративные элементы |
-| `COMPONENT_INSTANCE` | Ссылки на экземпляры компонентов |
-| `LOW_OPACITY` | Полупрозрачные декоративные элементы |
-| `BLEND_MODE` | Режимы наложения |
-| `CLIPPED_CONTENT` | Overflow hidden с обрезкой |
-| `NON_STANDARD_VALUE` | Несовпадение с токенами |
-| `INCONSISTENT_RADIUS` | Неравномерный border-radius |
-| `ORPHAN_COLOR` | Цвета без соответствия токенам |
-| `TEXT_OVERFLOW` | Обнаружение переполнения текста |
-| `MISSING_AUTO_LAYOUT` | Выровненные потомки без auto-layout |
-
----
-
-## MCP-промпты (3 штуки)
-
-### `layout_strategy`
-
-Правила для pixel-perfect вёрстки по дизайн-токенам Figma. Покрывает: flexbox/grid, синтаксис CSS-переменных, padding/gap/radius/shadows, fills, градиенты, фоновые изображения, типографику, constraints, обводки, эффекты, экземпляры компонентов, token hints.
-
-### `read_design_strategy`
-
-Трёхфазный воркфлоу чтения дизайна из Figma:
-1. **Обзор**: `get_screenshot` + `get_document_structure` + `get_design_tokens` + `get_css_variables` + `get_frame_overview`
-2. **Посекционный анализ**: `batch_screenshots` + `get_node_info` по каждой секции
-3. **Полная страница**: `export_page_analysis` (альтернатива фазе 2)
-
-### `token_usage_rules`
-
-Правила использования дизайн-токенов в коде. Никогда не хардкодить цвета/шрифты/отступы. Всегда использовать CSS custom properties из `.figma/design-system.css`.
-
----
-
-## MCP-ресурс
-
-### `figma://tokens/{file_id}`
-
-Динамический ресурс для доступа к закэшированным дизайн-токенам в формате JSON. Файл должен быть предварительно загружен через `get_design_tokens`.
-
----
-
-## Типичные сценарии работы
-
-### 1. Сверстать дизайн с нуля
-
-```
-get_document_structure → понять структуру страниц/фреймов
-get_design_tokens(save_to: ".figma/tokens.json") → извлечь токены
-get_css_variables(save_to: ".figma/design-system.css") → сгенерировать CSS-переменные
-get_screenshot(node_id: "frame-id") → визуальная референция
-get_frame_overview(node_id: "frame-id") → понять структуру фрейма
-batch_screenshots(node_id: "frame-id") → скриншоты всех секций
-get_node_info(node_id: "section-id", save_to: ".figma/section.json") → детальный CSS
-```
-
-### 2. Экспорт и сжатие изображений
-
-```
-export_node_image(node_id: "...", format: "jpg", scale: 2, compress: true)
-batch_screenshots(node_id: "...", compress: true)
-```
-
-### 3. Найти значение токена
-
-```
-search_token(query: "#3B82F6", category: "color")
-search_token(query: "Inter", category: "typography")
-search_token(query: "16", category: "spacing")
-```
-
----
-
-## Сжатие изображений (TinyJPG)
-
-### CompressionResult — результат сжатия одного изображения
-
-```typescript
-{
-  success: boolean        // Успешно ли сжатие
-  original_size: number   // Исходный размер в байтах
-  compressed_size: number // Сжатый размер (= исходному при ошибке)
-  savings_percent: number // Процент экономии (0 при ошибке)
-  error?: string          // Сообщение об ошибке
-}
-```
-
-### CompressionStats — статистика пакетного сжатия
-
-```typescript
-{
-  total_images: number            // Всего кандидатов на сжатие
-  compressed_count: number        // Успешно сжато
-  failed_count: number            // Не удалось (сохранены оригиналы)
-  total_original_bytes: number    // Сумма исходных размеров
-  total_compressed_bytes: number  // Сумма сжатых размеров
-  total_savings_percent: number   // Общий процент экономии
-  monthly_compression_count?: number // Использовано компрессий за месяц
-}
-```
-
-### Обработка ошибок
-
-| Ситуация | Поведение |
-|----------|----------|
-| `TINYJPG_TOKEN` не задан | Логируется предупреждение, изображения сохраняются без сжатия |
-| 401 — невалидный ключ | Сохраняется оригинал, логируется ошибка авторизации |
-| 429 — превышен лимит | Сохраняется оригинал, логируется предупреждение о rate limit |
-| 400/413 — слишком большой файл | Сохраняется оригинал, логируется предупреждение о размере |
-| 5xx — ошибка сервера | Сохраняется оригинал, логируется ошибка сервера |
-| Таймаут сети | Сохраняется оригинал, логируется предупреждение о таймауте |
-
-Сжатие **никогда** не блокирует пайплайн. Любая ошибка приводит к сохранению оригинального файла.
+The default `.figma/`, `.pixel-perfect/`, and `figma-output/` paths are gitignored. They can contain proprietary tokens, screenshots, image assets, node structure, page text, URLs, cookies reflected in page state, and DOM diagnostics. Git ignores reduce accidental commits but are not access control; choose an explicit private `FIGMA_SCALER_OUTPUT_ROOT` for MCP, choose private CLI output paths, and delete artifacts according to the design owner's retention requirements.

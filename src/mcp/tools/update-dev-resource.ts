@@ -43,10 +43,15 @@ export async function handleUpdateDevResource(
     updatedFields.push('url');
   }
 
-  await putDevResources(token, [resourceUpdate]);
+  const response = await putDevResources(token, [resourceUpdate]);
+  const updated = response.links_updated?.find((resource) => resource.id === params.resource_id);
+  if (!updated) {
+    const details = response.errors?.map((error) => error.error).join('; ');
+    throw new Error(`Figma did not update dev resource "${params.resource_id}"${details ? `: ${details}` : '.'}`);
+  }
 
   return {
-    resource_id: params.resource_id,
+    resource_id: updated.id,
     updated_fields: updatedFields,
   };
 }
