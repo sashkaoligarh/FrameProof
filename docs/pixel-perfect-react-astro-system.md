@@ -1,13 +1,13 @@
 # Pixel-Perfect React/Astro System
 
-`figma-scaler` is the control plane for strict Figma-to-code work in React, Next, and Astro projects. The intended use is not a one-shot screenshot glance. It is a continuous loop: extract exact design data, implement section by section, capture live UI, compare, fix, and repeat until the strict gate passes.
+FrameProof is the control plane for strict Figma-to-code work in React, Next, and Astro projects. The intended use is not a one-shot screenshot glance. It is a continuous loop: extract exact design data, implement section by section, capture live UI, compare, fix, and repeat until the strict gate passes.
 
 Build the source checkout with `npm ci && npm run build`. This project does not load `.env` automatically; provide `FIGMA_TOKEN` and other configuration through the process environment or MCP client.
 
 ## Core Contract
 
 - Do not stop at analysis, first implementation, or subjective similarity.
-- Final closure requires fresh post-edit screenshots and `figma-scaler gate` PASS.
+- Final closure requires fresh post-edit screenshots and `frameproof gate` PASS.
 - `FAIL` and final `REVIEW` are not acceptable closure states.
 - Save Figma artifacts in `.figma/` and visual audit artifacts in `.pixel-perfect/`.
 - Treat those artifacts as private design data even though the default directories are gitignored.
@@ -57,10 +57,10 @@ For every section and breakpoint, repeat these passes until the gate passes:
 
 The gate needs an installed Chrome or Chromium. Set `CHROME_BIN` or `CHROMIUM_BIN` when the executable is not in a standard Linux path.
 
-Use the gate after building this repository. The examples below assume `figma-scaler` has been explicitly linked or installed; from this source checkout, replace `figma-scaler` with `node /absolute/path/to/mcp-figma/dist/cli.js`:
+Use the gate after building this repository. The examples below assume `frameproof` has been explicitly linked or installed; from this source checkout, replace `frameproof` with `node /absolute/path/to/frameproof/dist/cli.js`:
 
 ```bash
-figma-scaler gate \
+frameproof gate \
   --page-url "http://localhost:3000/pricing" \
   --selector ".pricing-hero" \
   --figma-url "https://www.figma.com/design/FILE/Name?node-id=1-2" \
@@ -71,7 +71,7 @@ figma-scaler gate \
 Per-breakpoint references:
 
 ```bash
-figma-scaler gate \
+frameproof gate \
   --route "/pricing" \
   --base-url "http://localhost:3000" \
   --selector ".pricing-hero" \
@@ -89,8 +89,8 @@ The gate writes `REPORT.md`, `summary.json`, live screenshots, Figma references,
 ## Security Boundary
 
 - Use a read-only, least-privilege Figma token for extraction and visual checks.
-- The MCP server also registers remote mutation tools for variables, dev resources, and comments. Mutations are blocked unless `FIGMA_SCALER_ENABLE_WRITES=1`; leave it unset for read/export workflows.
-- MCP file-producing handlers are confined to `FIGMA_SCALER_OUTPUT_ROOT`, which defaults to a non-broad process working directory; filesystem root and user home are rejected. The standalone CLI parser and gate retain separate output flags.
+- The MCP server also registers remote mutation tools for variables, dev resources, and comments. Mutations are blocked unless `FRAMEPROOF_ENABLE_WRITES=1`; leave it unset for read/export workflows.
+- MCP file-producing handlers are confined to `FRAMEPROOF_OUTPUT_ROOT`, which defaults to a non-broad process working directory; filesystem root and user home are rejected. The standalone CLI parser and gate retain separate output flags.
 - Review [../SECURITY.md](../SECURITY.md) before processing private files or authenticated live pages.
 
 ## Closure Rules

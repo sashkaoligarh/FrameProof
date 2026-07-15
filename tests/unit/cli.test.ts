@@ -15,7 +15,7 @@ const originalEnvironment = {
   CHROME_BIN: process.env.CHROME_BIN,
   CHROMIUM_BIN: process.env.CHROMIUM_BIN,
   FIGMA_TOKEN: process.env.FIGMA_TOKEN,
-  FIGMA_SCALER_OUTPUT_ROOT: process.env.FIGMA_SCALER_OUTPUT_ROOT,
+  FRAMEPROOF_OUTPUT_ROOT: process.env.FRAMEPROOF_OUTPUT_ROOT,
   TINYJPG_TOKEN: process.env.TINYJPG_TOKEN,
 };
 
@@ -32,6 +32,10 @@ describe.sequential('CLI validation and doctor', () => {
     for (const value of ['0', '4.1', 'NaN', 'Infinity', '2px']) {
       expect(() => parseFiniteNumberInRange(value, '--image-scale', 1, 4)).toThrow();
     }
+  });
+
+  it('uses the frameproof command name', () => {
+    expect(program.name()).toBe('frameproof');
   });
 
   it('accepts only nonnegative safe integers for tolerances and waits', () => {
@@ -61,13 +65,13 @@ describe.sequential('CLI validation and doctor', () => {
   });
 
   it('reports readiness without exposing token values and keeps TinyJPG optional', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-doctor-'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-doctor-'));
     const chromePath = path.join(root, 'chrome');
     fs.writeFileSync(chromePath, '#!/bin/sh\necho "Chromium 123"\n', { mode: 0o700 });
     process.env.CHROME_BIN = chromePath;
     delete process.env.CHROMIUM_BIN;
     process.env.FIGMA_TOKEN = 'figma-super-secret';
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = root;
+    process.env.FRAMEPROOF_OUTPUT_ROOT = root;
     delete process.env.TINYJPG_TOKEN;
 
     const report = collectDoctorReport();
@@ -83,14 +87,14 @@ describe.sequential('CLI validation and doctor', () => {
   });
 
   it('marks missing required configuration and an unusable output root as blockers', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-doctor-'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-doctor-'));
     const chromePath = path.join(root, 'chrome');
     const outputRootFile = path.join(root, 'not-a-directory');
     fs.writeFileSync(chromePath, '#!/bin/sh\necho "Chromium 123"\n', { mode: 0o700 });
     fs.writeFileSync(outputRootFile, 'file');
     process.env.CHROME_BIN = chromePath;
     delete process.env.FIGMA_TOKEN;
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputRootFile;
+    process.env.FRAMEPROOF_OUTPUT_ROOT = outputRootFile;
 
     const report = collectDoctorReport();
 

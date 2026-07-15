@@ -12,7 +12,7 @@ If private vulnerability reporting is unavailable, open a public issue containin
 
 ## Credential Handling
 
-- Treat `FIGMA_TOKEN`, `TINYJPG_TOKEN`, and `FIGMA_SCALER_COOKIES_JSON` as secrets.
+- Treat `FIGMA_TOKEN`, `TINYJPG_TOKEN`, and `FRAMEPROOF_COOKIES_JSON` as secrets.
 - Use a dedicated, least-privilege Figma token. A read-only token is strongly preferred for extraction and visual comparison.
 - Do not pass tokens through command-line flags when shell history or process inspection is a concern. Prefer process or MCP-client environment configuration.
 - This project does not load `.env` automatically. `.env.example` contains names only and must never contain real values.
@@ -21,11 +21,11 @@ If private vulnerability reporting is unavailable, open a public issue containin
 
 ## MCP Read and Write Risk
 
-The stdio MCP server exposes both read tools and tools that can create, update, or delete Figma variables and dev resources, and post comments. Remote mutations are blocked unless `FIGMA_SCALER_ENABLE_WRITES` is exactly `1`. Destructive variable tools default to dry-run, but enabling writes is process-wide and is not approval for an individual request. The Figma token scopes remain the final remote permission boundary.
+The stdio MCP server exposes both read tools and tools that can create, update, or delete Figma variables and dev resources, and post comments. Remote mutations are blocked unless `FRAMEPROOF_ENABLE_WRITES` is exactly `1`. Destructive variable tools default to dry-run, but enabling writes is process-wide and is not approval for an individual request. The Figma token scopes remain the final remote permission boundary.
 
 Leave writes disabled and do not supply write scopes to an untrusted or read-only workflow. When writes are enabled, review each proposed MCP call in the client and disable writes again after the operation.
 
-Several MCP tools also write local files through caller-provided `save_to`, `output_dir`, or `output_path` values. They are resolved beneath `FIGMA_SCALER_OUTPUT_ROOT`, which defaults to a non-broad MCP process working directory; filesystem root, user home, traversal, and symlink escapes are rejected. Set an explicit private root and run the server as a low-privilege OS user. The standalone parser and visual gate still expose separate output flags and are not wholly governed by this MCP boundary, so those paths require care. Do not expose the stdio process as an unauthenticated network service.
+Several MCP tools also write local files through caller-provided `save_to`, `output_dir`, or `output_path` values. They are resolved beneath `FRAMEPROOF_OUTPUT_ROOT`, which defaults to a non-broad MCP process working directory; filesystem root, user home, traversal, and symlink escapes are rejected. Set an explicit private root and run the server as a low-privilege OS user. The standalone parser and visual gate still expose separate output flags and are not wholly governed by this MCP boundary, so those paths require care. Do not expose the stdio process as an unauthenticated network service.
 
 ## Private Design Artifacts
 

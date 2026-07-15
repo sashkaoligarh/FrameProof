@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-const OUTPUT_ROOT_ENV = 'FIGMA_SCALER_OUTPUT_ROOT';
+const OUTPUT_ROOT_ENV = 'FRAMEPROOF_OUTPUT_ROOT';
 
 interface OutputRoots {
   configured: string;
@@ -54,7 +54,7 @@ function assertSafeOutputRoot(candidate: string, explicit: boolean): void {
   }
   throw new Error(
     `Refusing to use ${description} as the default output root. Set ${OUTPUT_ROOT_ENV} to a project directory ` +
-      'or launch figma-scaler inside a project.',
+      'or launch frameproof inside a project.',
   );
 }
 

@@ -1,5 +1,5 @@
 /**
- * Public API for figma-scaler.
+ * Public API for FrameProof.
  * Exports key functions for use as a library.
  */
 

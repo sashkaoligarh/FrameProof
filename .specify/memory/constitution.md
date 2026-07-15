@@ -16,7 +16,7 @@ Sync Impact Report
 - Follow-up TODOs: none
 -->
 
-# Figma Scaler Constitution
+# FrameProof Constitution
 
 ## Core Principles
 
@@ -130,7 +130,7 @@ difficulty and reduce user confidence.
 ## Governance
 
 This constitution is the authoritative reference for all design and
-implementation decisions in the Figma Scaler project. When a conflict
+implementation decisions in the FrameProof project. When a conflict
 arises between this constitution and any other document, the
 constitution prevails.
 

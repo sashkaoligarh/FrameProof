@@ -26,7 +26,7 @@ export const program = new Command();
 export const SUPPORTED_NODE_RANGE = '^20.19.0 || >=22.12.0';
 
 program
-  .name('figma-scaler')
+  .name('frameproof')
   .description('Extract design tokens from Figma files')
   .version('0.1.0');
 
@@ -333,13 +333,13 @@ export function collectDoctorReport(): DoctorReport {
     const outputRoot = prepareOutputDirectory('.');
     let sandboxRejectedEscape = false;
     try {
-      resolveOutputPath('../figma-scaler-doctor-escape');
+      resolveOutputPath('../frameproof-doctor-escape');
     } catch {
       sandboxRejectedEscape = true;
     }
     if (!sandboxRejectedEscape) throw new Error('safe output-root traversal was not rejected');
 
-    const probePath = path.join(outputRoot, `.figma-scaler-doctor-${randomUUID()}`);
+    const probePath = path.join(outputRoot, `.frameproof-doctor-${randomUUID()}`);
     let descriptor: number | undefined;
     try {
       descriptor = fs.openSync(probePath, 'wx', 0o600);

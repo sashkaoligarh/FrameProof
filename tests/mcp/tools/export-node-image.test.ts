@@ -69,8 +69,8 @@ describe('handleExportNodeImage', () => {
     mockFetchImages.mockResolvedValue({ '10:1': 'https://example.com/image.svg' });
     mockDownloadImage.mockResolvedValue(new TextEncoder().encode('<svg></svg>').buffer);
 
-    const outputDir = path.join(tmpdir(), `figma-test-${Date.now()}`);
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputDir;
+    const outputDir = path.join(tmpdir(), `frameproof-test-${Date.now()}`);
+    process.env.FRAMEPROOF_OUTPUT_ROOT = outputDir;
     try {
       const result = await handleExportNodeImage(
         { file_id: 'file-1', node_id: '10:1', format: 'svg', output_dir: outputDir },
@@ -86,7 +86,7 @@ describe('handleExportNodeImage', () => {
       expect(result.size_bytes).toBeGreaterThan(0);
       expect(fs.existsSync(result.file_path)).toBe(true);
     } finally {
-      delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
+      delete process.env.FRAMEPROOF_OUTPUT_ROOT;
       if (fs.existsSync(outputDir)) fs.rmSync(outputDir, { recursive: true });
     }
   });
@@ -97,8 +97,8 @@ describe('handleExportNodeImage', () => {
     mockFetchImages.mockResolvedValue({ '10:1': 'https://example.com/image.png' });
     mockDownloadImage.mockResolvedValue(new Uint8Array([0x89, 0x50]).buffer);
 
-    const outputDir = path.join(tmpdir(), `figma-test-new-${Date.now()}`);
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputDir;
+    const outputDir = path.join(tmpdir(), `frameproof-test-new-${Date.now()}`);
+    process.env.FRAMEPROOF_OUTPUT_ROOT = outputDir;
     try {
       expect(fs.existsSync(outputDir)).toBe(false);
 
@@ -112,7 +112,7 @@ describe('handleExportNodeImage', () => {
 
       expect(fs.existsSync(outputDir)).toBe(true);
     } finally {
-      delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
+      delete process.env.FRAMEPROOF_OUTPUT_ROOT;
       if (fs.existsSync(outputDir)) fs.rmSync(outputDir, { recursive: true });
     }
   });

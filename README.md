@@ -1,6 +1,6 @@
-# figma-scaler
+# FrameProof
 
-`figma-scaler` is a TypeScript toolkit for extracting Figma design data, exposing it to MCP clients, and comparing live React/Astro UI with Figma or local image references.
+FrameProof is a TypeScript toolkit for extracting Figma design data, exposing it to MCP clients, and comparing live React/Astro UI with Figma or local image references.
 
 This is a source repository. The quick start below builds and runs the checked-out source and does not assume that an npm package has been published.
 
@@ -13,9 +13,9 @@ This is a source repository. The quick start below builds and runs the checked-o
 
 ## Security Warning
 
-The MCP server registers remote write tools, but remote mutations are blocked by default. They run only when `FIGMA_SCALER_ENABLE_WRITES` is exactly `1` in the server process. Use a least-privilege, read-only Figma token unless writes are intentional, review tool calls in your MCP client, and do not connect an untrusted agent. Enabling writes is process-wide, not approval for a specific operation.
+The MCP server registers remote write tools, but remote mutations are blocked by default. They run only when `FRAMEPROOF_ENABLE_WRITES` is exactly `1` in the server process. Use a least-privilege, read-only Figma token unless writes are intentional, review tool calls in your MCP client, and do not connect an untrusted agent. Enabling writes is process-wide, not approval for a specific operation.
 
-MCP file-producing parameters such as `save_to`, `output_dir`, and `output_path` are confined to `FIGMA_SCALER_OUTPUT_ROOT`, which defaults to the server's current working directory. Filesystem-root and user-home roots, relative traversal, and symlink escapes are rejected. The parser and gate still accept their own output flags and are not wholly governed by this MCP boundary; run all modes with appropriate working directories and OS permissions.
+MCP file-producing parameters such as `save_to`, `output_dir`, and `output_path` are confined to `FRAMEPROOF_OUTPUT_ROOT`, which defaults to the server's current working directory. Filesystem-root and user-home roots, relative traversal, and symlink escapes are rejected. The parser and gate still accept their own output flags and are not wholly governed by this MCP boundary; run all modes with appropriate working directories and OS permissions.
 
 See [SECURITY.md](SECURITY.md) before using private designs or write-capable tokens.
 
@@ -29,8 +29,8 @@ See [SECURITY.md](SECURITY.md) before using private designs or write-capable tok
 ## Quick Start
 
 ```bash
-git clone https://github.com/sashkaoligarh/mcp-figma.git
-cd mcp-figma
+git clone https://github.com/sashkaoligarh/frameproof.git
+cd frameproof
 npm ci
 npm run build
 npm test
@@ -70,21 +70,21 @@ Build once, then point an MCP client at the compiled stdio server. Replace the a
 ```json
 {
   "mcpServers": {
-    "figma-scaler": {
+    "frameproof-mcp": {
       "command": "node",
       "args": [
-        "/absolute/path/to/mcp-figma/dist/mcp/server.js"
+        "/absolute/path/to/frameproof/dist/mcp/server.js"
       ],
       "env": {
         "FIGMA_TOKEN": "replace-with-your-figma-token",
-        "FIGMA_SCALER_OUTPUT_ROOT": "/absolute/path/to/private-artifacts"
+        "FRAMEPROOF_OUTPUT_ROOT": "/absolute/path/to/private-artifacts"
       }
     }
   }
 }
 ```
 
-Some clients inherit the parent process environment, while others require an `env` block and store it in plain text. Follow the client's secret-storage guidance and protect its configuration file. Add `TINYJPG_TOKEN` only if the compression tools need it. Leave `FIGMA_SCALER_ENABLE_WRITES` unset for read/export workflows; add it with value `1` only when remote Figma mutations are intentional.
+Some clients inherit the parent process environment, while others require an `env` block and store it in plain text. Follow the client's secret-storage guidance and protect its configuration file. Add `TINYJPG_TOKEN` only if the compression tools need it. Leave `FRAMEPROOF_ENABLE_WRITES` unset for read/export workflows; add it with value `1` only when remote Figma mutations are intentional.
 
 For a direct stdio smoke test, run `npm run mcp:start`; it waits for an MCP client on stdin/stdout. MCP logs go to stderr.
 
@@ -122,9 +122,9 @@ With `--real-flow`, one global reference provides exact desktop coverage plus a 
 | `TINYJPG_TOKEN` | Implemented, optional | TinyJPG/Tinify API authentication when `--compress` or `compress: true` is used. Image bytes are sent to Tinify. |
 | `CHROME_BIN` | Implemented, optional | Absolute Google Chrome executable path for `gate`. |
 | `CHROMIUM_BIN` | Implemented, optional | Absolute Chromium executable path, checked after `CHROME_BIN`. |
-| `FIGMA_SCALER_COOKIES_JSON` | Implemented, optional | JSON array of `{ "name", "value", "url" }` cookies added to visual-gate browser contexts. Treat it as a secret. |
-| `FIGMA_SCALER_OUTPUT_ROOT` | Implemented, optional | Safe root for MCP file-producing handlers; defaults to a non-broad process working directory. Filesystem root and user home are rejected. It does not replace parser or gate output flags. |
-| `FIGMA_SCALER_ENABLE_WRITES` | Implemented, optional | Remote MCP mutations are blocked unless the value is exactly `1`. |
+| `FRAMEPROOF_COOKIES_JSON` | Implemented, optional | JSON array of `{ "name", "value", "url" }` cookies added to visual-gate browser contexts. Treat it as a secret. |
+| `FRAMEPROOF_OUTPUT_ROOT` | Implemented, optional | Safe root for MCP file-producing handlers; defaults to a non-broad process working directory. Filesystem root and user home are rejected. It does not replace parser or gate output flags. |
+| `FRAMEPROOF_ENABLE_WRITES` | Implemented, optional | Remote MCP mutations are blocked unless the value is exactly `1`. |
 
 `.env.example` is a reference template only. Export variables yourself or configure them in the process manager or MCP client.
 

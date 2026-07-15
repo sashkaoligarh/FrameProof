@@ -78,9 +78,9 @@ describe('handleGetCSSVariables', () => {
     const entry = makeCacheEntry('file-1');
     mockFetchFn.mockResolvedValue({ file: entry.file, nodes: entry.nodes, tokens: entry.tokens });
 
-    const outputRoot = fs.mkdtempSync(path.join(tmpdir(), 'figma-scaler-css-'));
+    const outputRoot = fs.mkdtempSync(path.join(tmpdir(), 'frameproof-css-'));
     const tmpFile = path.join(outputRoot, 'design-system.css');
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputRoot;
+    process.env.FRAMEPROOF_OUTPUT_ROOT = outputRoot;
     try {
       const result = await handleGetCSSVariables(
         { file_id: 'file-1', save_to: tmpFile },
@@ -94,7 +94,7 @@ describe('handleGetCSSVariables', () => {
       const content = fs.readFileSync(tmpFile, 'utf-8');
       expect(content).toContain(':root {');
     } finally {
-      delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
+      delete process.env.FRAMEPROOF_OUTPUT_ROOT;
       fs.rmSync(outputRoot, { recursive: true, force: true });
     }
   });

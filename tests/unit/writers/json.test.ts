@@ -12,7 +12,7 @@
  * - Files include: colors.json, typography.json, spacing.json,
  *   border-radius.json, shadows.json, gradients.json
  * - Each file uses DTCG format: $type, $value, $extensions
- * - $extensions contains figma-scaler namespace with node_id and usage_count
+ * - $extensions contains frameproof namespace with node_id and usage_count
  * - generateComponentsJSON returns valid JSON array
  * - Handle empty arrays (files still generated but with empty objects)
  * - All JSON is valid (JSON.parse doesn't throw)
@@ -282,32 +282,32 @@ describe('generateJSON — colors.json DTCG format', () => {
     expect(entry.$value).toBe('#2563eb');
   });
 
-  it('color entries have $extensions with figma-scaler namespace', () => {
+  it('color entries have $extensions with frameproof namespace', () => {
     for (const value of Object.values(colors)) {
       const entry = value as Record<string, unknown>;
       expect(entry.$extensions).toBeDefined();
       const extensions = entry.$extensions as Record<string, unknown>;
-      expect(extensions['figma-scaler']).toBeDefined();
+      expect(extensions.frameproof).toBeDefined();
     }
   });
 
-  it('figma-scaler extension contains node_id and usage_count', () => {
+  it('frameproof extension contains node_id and usage_count', () => {
     for (const value of Object.values(colors)) {
       const entry = value as Record<string, unknown>;
-      const figmaScaler = (entry.$extensions as Record<string, unknown>)[
-        'figma-scaler'
+      const frameproof = (entry.$extensions as Record<string, unknown>)[
+        'frameproof'
       ] as Record<string, unknown>;
-      expect(figmaScaler).toHaveProperty('node_id');
-      expect(figmaScaler).toHaveProperty('usage_count');
+      expect(frameproof).toHaveProperty('node_id');
+      expect(frameproof).toHaveProperty('usage_count');
     }
   });
 
-  it('figma-scaler extension contains rgba data', () => {
+  it('frameproof extension contains rgba data', () => {
     const entry = colors['brand-primary'] as Record<string, unknown>;
-    const figmaScaler = (entry.$extensions as Record<string, unknown>)[
-      'figma-scaler'
+    const frameproof = (entry.$extensions as Record<string, unknown>)[
+      'frameproof'
     ] as Record<string, unknown>;
-    expect(figmaScaler).toHaveProperty('rgba');
+    expect(frameproof).toHaveProperty('rgba');
   });
 });
 
@@ -347,24 +347,24 @@ describe('generateJSON — typography.json DTCG format', () => {
     expect(val.font_size).toBe('32px');
   });
 
-  it('$extensions.figma-scaler contains node_id and usage_count', () => {
+  it('$extensions.frameproof contains node_id and usage_count', () => {
     const entry = typography['heading-xl'] as Record<string, unknown>;
-    const figmaScaler = (entry.$extensions as Record<string, unknown>)[
-      'figma-scaler'
+    const frameproof = (entry.$extensions as Record<string, unknown>)[
+      'frameproof'
     ] as Record<string, unknown>;
-    expect(figmaScaler).toHaveProperty('node_id');
-    expect(figmaScaler).toHaveProperty('usage_count');
+    expect(frameproof).toHaveProperty('node_id');
+    expect(frameproof).toHaveProperty('usage_count');
   });
 
-  it('$extensions.figma-scaler includes font_style, text_case, text_decoration, sample_text', () => {
+  it('$extensions.frameproof includes font_style, text_case, text_decoration, sample_text', () => {
     const entry = typography['heading-xl'] as Record<string, unknown>;
-    const figmaScaler = (entry.$extensions as Record<string, unknown>)[
-      'figma-scaler'
+    const frameproof = (entry.$extensions as Record<string, unknown>)[
+      'frameproof'
     ] as Record<string, unknown>;
-    expect(figmaScaler).toHaveProperty('font_style');
-    expect(figmaScaler).toHaveProperty('text_case');
-    expect(figmaScaler).toHaveProperty('text_decoration');
-    expect(figmaScaler).toHaveProperty('sample_text');
+    expect(frameproof).toHaveProperty('font_style');
+    expect(frameproof).toHaveProperty('text_case');
+    expect(frameproof).toHaveProperty('text_decoration');
+    expect(frameproof).toHaveProperty('sample_text');
   });
 });
 
@@ -393,13 +393,13 @@ describe('generateJSON — spacing.json DTCG format', () => {
     expect(entry.$value).toBe('8px');
   });
 
-  it('$extensions.figma-scaler contains source and usage_count', () => {
+  it('$extensions.frameproof contains source and usage_count', () => {
     const entry = spacing['spacing-8'] as Record<string, unknown>;
-    const figmaScaler = (entry.$extensions as Record<string, unknown>)[
-      'figma-scaler'
+    const frameproof = (entry.$extensions as Record<string, unknown>)[
+      'frameproof'
     ] as Record<string, unknown>;
-    expect(figmaScaler).toHaveProperty('source');
-    expect(figmaScaler).toHaveProperty('usage_count');
+    expect(frameproof).toHaveProperty('source');
+    expect(frameproof).toHaveProperty('usage_count');
   });
 });
 
@@ -428,25 +428,25 @@ describe('generateJSON — border-radius.json DTCG format', () => {
     expect(entry.$value).toBe('4px');
   });
 
-  it('$extensions.figma-scaler contains is_per_corner and usage_count', () => {
+  it('$extensions.frameproof contains is_per_corner and usage_count', () => {
     const entry = radii['radius-4'] as Record<string, unknown>;
-    const figmaScaler = (entry.$extensions as Record<string, unknown>)[
-      'figma-scaler'
+    const frameproof = (entry.$extensions as Record<string, unknown>)[
+      'frameproof'
     ] as Record<string, unknown>;
-    expect(figmaScaler).toHaveProperty('is_per_corner');
-    expect(figmaScaler).toHaveProperty('usage_count');
+    expect(frameproof).toHaveProperty('is_per_corner');
+    expect(frameproof).toHaveProperty('usage_count');
   });
 
   it('is_per_corner value matches source token', () => {
     const entry4 = radii['radius-4'] as Record<string, unknown>;
     const fs4 = (entry4.$extensions as Record<string, unknown>)[
-      'figma-scaler'
+      'frameproof'
     ] as Record<string, unknown>;
     expect(fs4.is_per_corner).toBe(false);
 
     const entry8 = radii['radius-8'] as Record<string, unknown>;
     const fs8 = (entry8.$extensions as Record<string, unknown>)[
-      'figma-scaler'
+      'frameproof'
     ] as Record<string, unknown>;
     expect(fs8.is_per_corner).toBe(true);
   });
@@ -532,14 +532,14 @@ describe('generateJSON — shadows.json DTCG format', () => {
     expect(val.spread).toBe('0px');
   });
 
-  it('$extensions.figma-scaler contains node_id, shadow_type, css', () => {
+  it('$extensions.frameproof contains node_id, shadow_type, css', () => {
     const entry = shadows['shadow-drop-1'] as Record<string, unknown>;
-    const figmaScaler = (entry.$extensions as Record<string, unknown>)[
-      'figma-scaler'
+    const frameproof = (entry.$extensions as Record<string, unknown>)[
+      'frameproof'
     ] as Record<string, unknown>;
-    expect(figmaScaler).toHaveProperty('node_id');
-    expect(figmaScaler).toHaveProperty('shadow_type');
-    expect(figmaScaler).toHaveProperty('css');
+    expect(frameproof).toHaveProperty('node_id');
+    expect(frameproof).toHaveProperty('shadow_type');
+    expect(frameproof).toHaveProperty('css');
   });
 });
 
@@ -588,14 +588,14 @@ describe('generateJSON — gradients.json DTCG format', () => {
     }
   });
 
-  it('$extensions.figma-scaler contains node_id, handle_positions, stops_rgba', () => {
+  it('$extensions.frameproof contains node_id, handle_positions, stops_rgba', () => {
     const entry = gradients['gradient-linear-1'] as Record<string, unknown>;
-    const figmaScaler = (entry.$extensions as Record<string, unknown>)[
-      'figma-scaler'
+    const frameproof = (entry.$extensions as Record<string, unknown>)[
+      'frameproof'
     ] as Record<string, unknown>;
-    expect(figmaScaler).toHaveProperty('node_id');
-    expect(figmaScaler).toHaveProperty('handle_positions');
-    expect(figmaScaler).toHaveProperty('stops_rgba');
+    expect(frameproof).toHaveProperty('node_id');
+    expect(frameproof).toHaveProperty('handle_positions');
+    expect(frameproof).toHaveProperty('stops_rgba');
   });
 });
 
@@ -607,16 +607,16 @@ describe('generateJSON — snake_case keys in $extensions', () => {
   const result = generateJSON(fullTokens);
 
   /**
-   * Recursively collect all keys in the figma-scaler extension objects
+   * Recursively collect all keys in the frameproof extension objects
    * across all files and verify they are snake_case.
    */
-  function collectFigmaScalerKeys(parsed: Record<string, unknown>): string[] {
+  function collectFrameproofKeys(parsed: Record<string, unknown>): string[] {
     const keys: string[] = [];
     for (const value of Object.values(parsed)) {
       const entry = value as Record<string, unknown>;
       if (entry.$extensions) {
         const ext = entry.$extensions as Record<string, unknown>;
-        const fs = ext['figma-scaler'] as Record<string, unknown> | undefined;
+        const fs = ext.frameproof as Record<string, unknown> | undefined;
         if (fs) {
           keys.push(...Object.keys(fs));
         }
@@ -625,54 +625,54 @@ describe('generateJSON — snake_case keys in $extensions', () => {
     return keys;
   }
 
-  it('colors.json figma-scaler extension keys are snake_case', () => {
+  it('colors.json frameproof extension keys are snake_case', () => {
     const parsed = JSON.parse(result['colors.json']) as Record<string, unknown>;
-    const keys = collectFigmaScalerKeys(parsed);
+    const keys = collectFrameproofKeys(parsed);
     expect(keys.length).toBeGreaterThan(0);
     for (const key of keys) {
       expect(isSnakeCase(key)).toBe(true);
     }
   });
 
-  it('typography.json figma-scaler extension keys are snake_case', () => {
+  it('typography.json frameproof extension keys are snake_case', () => {
     const parsed = JSON.parse(result['typography.json']) as Record<string, unknown>;
-    const keys = collectFigmaScalerKeys(parsed);
+    const keys = collectFrameproofKeys(parsed);
     expect(keys.length).toBeGreaterThan(0);
     for (const key of keys) {
       expect(isSnakeCase(key)).toBe(true);
     }
   });
 
-  it('spacing.json figma-scaler extension keys are snake_case', () => {
+  it('spacing.json frameproof extension keys are snake_case', () => {
     const parsed = JSON.parse(result['spacing.json']) as Record<string, unknown>;
-    const keys = collectFigmaScalerKeys(parsed);
+    const keys = collectFrameproofKeys(parsed);
     expect(keys.length).toBeGreaterThan(0);
     for (const key of keys) {
       expect(isSnakeCase(key)).toBe(true);
     }
   });
 
-  it('border-radius.json figma-scaler extension keys are snake_case', () => {
+  it('border-radius.json frameproof extension keys are snake_case', () => {
     const parsed = JSON.parse(result['border-radius.json']) as Record<string, unknown>;
-    const keys = collectFigmaScalerKeys(parsed);
+    const keys = collectFrameproofKeys(parsed);
     expect(keys.length).toBeGreaterThan(0);
     for (const key of keys) {
       expect(isSnakeCase(key)).toBe(true);
     }
   });
 
-  it('shadows.json figma-scaler extension keys are snake_case', () => {
+  it('shadows.json frameproof extension keys are snake_case', () => {
     const parsed = JSON.parse(result['shadows.json']) as Record<string, unknown>;
-    const keys = collectFigmaScalerKeys(parsed);
+    const keys = collectFrameproofKeys(parsed);
     expect(keys.length).toBeGreaterThan(0);
     for (const key of keys) {
       expect(isSnakeCase(key)).toBe(true);
     }
   });
 
-  it('gradients.json figma-scaler extension keys are snake_case', () => {
+  it('gradients.json frameproof extension keys are snake_case', () => {
     const parsed = JSON.parse(result['gradients.json']) as Record<string, unknown>;
-    const keys = collectFigmaScalerKeys(parsed);
+    const keys = collectFrameproofKeys(parsed);
     expect(keys.length).toBeGreaterThan(0);
     for (const key of keys) {
       expect(isSnakeCase(key)).toBe(true);

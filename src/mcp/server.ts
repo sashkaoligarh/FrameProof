@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * MCP server entry point for figma-scaler.
+ * MCP server entry point for FrameProof.
  * Exposes design token extraction, node inspection, image export,
  * and AI-optimized context generation as MCP tools for Claude Code.
  *
@@ -73,10 +73,10 @@ import { FIGMA_TOKENS_TEMPLATE, createTokensResourceHandlers } from './resources
 
 // ─── Configuration ──────────────────────────────────────
 
-const SERVER_NAME = 'figma-scaler';
+const SERVER_NAME = 'frameproof';
 const SERVER_VERSION = '0.1.0';
 export const FIGMA_WRITE_ENABLEMENT_MESSAGE =
-  'Remote Figma mutations are disabled. Set FIGMA_SCALER_ENABLE_WRITES=1 in the MCP server environment and restart it to enable writes.';
+  'Remote Figma mutations are disabled. Set FRAMEPROOF_ENABLE_WRITES=1 in the MCP server environment and restart it to enable writes.';
 
 const LOCAL_FILE_WRITE_ANNOTATIONS = {
   readOnlyHint: false,
@@ -123,7 +123,7 @@ export function getFigmaToken(): string | null {
 }
 
 export function figmaWritesEnabled(): boolean {
-  return process.env.FIGMA_SCALER_ENABLE_WRITES === '1';
+  return process.env.FRAMEPROOF_ENABLE_WRITES === '1';
 }
 
 function writeDisabledResult(toolName: string) {
@@ -143,7 +143,7 @@ export async function fetchFigmaData(fileId: string): Promise<FetchResult> {
   if (!token) {
     throw new Error(
       'FIGMA_TOKEN environment variable is not set.\n\n' +
-        'To use figma-scaler MCP server:\n' +
+        'To use the FrameProof MCP server:\n' +
         '1. Generate a personal access token at https://www.figma.com/developers/api#access-tokens\n' +
         '2. Set it in the MCP client environment or export FIGMA_TOKEN before starting the server.\n' +
         'This project does not load .env files automatically.',

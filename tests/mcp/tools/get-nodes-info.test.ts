@@ -87,7 +87,7 @@ describe('handleGetNodesInfo', () => {
   });
 
   afterEach(() => {
-    delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
+    delete process.env.FRAMEPROOF_OUTPUT_ROOT;
     if (outputRoot) fs.rmSync(outputRoot, { recursive: true, force: true });
     outputRoot = undefined;
   });
@@ -161,8 +161,8 @@ describe('handleGetNodesInfo', () => {
       { node_id: '10:3', node_type: 'FRAME', name: 'Grandchild', parent_id: '10:2', depth: 2, raw: grandchild },
     ];
     mockFetchFn.mockResolvedValue({ file: entry.file, nodes: entry.nodes, tokens: entry.tokens });
-    outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-nodes-info-'));
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputRoot;
+    outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-nodes-info-'));
+    process.env.FRAMEPROOF_OUTPUT_ROOT = outputRoot;
 
     const savedResult = await handleGetNodesInfo(
       {

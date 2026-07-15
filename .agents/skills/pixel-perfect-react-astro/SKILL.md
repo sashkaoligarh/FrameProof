@@ -15,7 +15,7 @@ Use this skill when the user provides a Figma link or screenshot and wants React
 
 - Work continuously until strict gates pass or a concrete blocker is proven.
 - Do not stop after a plan, first pass, or subjective visual similarity.
-- Use `figma_scaler` MCP tools for measurements and assets; do not infer sizes from screenshots alone.
+- Use `frameproof-mcp` tools for measurements and assets; do not infer sizes from screenshots alone.
 - Save Figma artifacts under `.figma/` and verification artifacts under `.pixel-perfect/`.
 - Read project context and design-system files before editing: `CLAUDE.md`, `AGENTS.md`, `README`, docs, package scripts, style/theme/token files, shared UI/components.
 - Preserve existing architecture. Prefer Feature-Sliced Design layering when introducing new structure.
@@ -29,7 +29,7 @@ Use this skill when the user provides a Figma link or screenshot and wants React
 3. Load prompts `read_design_strategy` and `layout_strategy`.
 4. Run `get_document_structure`, `get_screenshot`, `get_design_tokens`, `get_css_variables`, `get_frame_overview`, `batch_screenshots`, per-section/per-breakpoint `get_node_info`, `export_node_image`, and `export_page_analysis`.
 5. Implement section by section.
-6. Run `figma-scaler gate --real-flow --fail-on-review` for every stable edited selector.
+6. Run `frameproof gate --real-flow --fail-on-review` for every stable edited selector.
 7. If the gate fails, inspect artifacts, fix, and rerun. Repeat until PASS.
 
 ## Full-Page Discovery

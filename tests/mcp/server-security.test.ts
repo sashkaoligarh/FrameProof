@@ -17,7 +17,7 @@ describe('MCP write boundary', () => {
   const client = new Client({ name: 'security-test-client', version: '1.0.0' });
 
   beforeAll(async () => {
-    delete process.env.FIGMA_SCALER_ENABLE_WRITES;
+    delete process.env.FRAMEPROOF_ENABLE_WRITES;
     delete process.env.FIGMA_TOKEN;
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
@@ -25,7 +25,7 @@ describe('MCP write boundary', () => {
   });
 
   afterAll(async () => {
-    delete process.env.FIGMA_SCALER_ENABLE_WRITES;
+    delete process.env.FRAMEPROOF_ENABLE_WRITES;
     delete process.env.FIGMA_TOKEN;
     await client.close();
   });
@@ -66,7 +66,7 @@ describe('MCP write boundary', () => {
     const result = await client.callTool({ name, arguments: args });
 
     expect(result.isError).toBe(true);
-    expect(textContent(result)).toContain('FIGMA_SCALER_ENABLE_WRITES=1');
+    expect(textContent(result)).toContain('FRAMEPROOF_ENABLE_WRITES=1');
   });
 
   it('allows the default sync_variables dry-run while writes are disabled', async () => {
@@ -96,7 +96,7 @@ describe('MCP write boundary', () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(textContent(result)).toContain('FIGMA_SCALER_ENABLE_WRITES=1');
+    expect(textContent(result)).toContain('FRAMEPROOF_ENABLE_WRITES=1');
   });
 
   it('keeps read tools enabled and publishes write-risk annotations', async () => {
@@ -114,10 +114,10 @@ describe('MCP write boundary', () => {
   });
 
   it('requires the exact enablement value', () => {
-    process.env.FIGMA_SCALER_ENABLE_WRITES = 'true';
+    process.env.FRAMEPROOF_ENABLE_WRITES = 'true';
     expect(figmaWritesEnabled()).toBe(false);
-    process.env.FIGMA_SCALER_ENABLE_WRITES = '1';
+    process.env.FRAMEPROOF_ENABLE_WRITES = '1';
     expect(figmaWritesEnabled()).toBe(true);
-    delete process.env.FIGMA_SCALER_ENABLE_WRITES;
+    delete process.env.FRAMEPROOF_ENABLE_WRITES;
   });
 });

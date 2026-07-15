@@ -20,8 +20,8 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Security
 
-- Disabled remote Figma mutations by default behind `FIGMA_SCALER_ENABLE_WRITES=1`, made destructive variable operations dry-run by default, fully redacted API tokens, and removed comment bodies and resource URLs from write logs.
-- Confined MCP-generated files to `FIGMA_SCALER_OUTPUT_ROOT` with traversal and symlink-escape protection.
+- Disabled remote Figma mutations by default behind `FRAMEPROOF_ENABLE_WRITES=1`, made destructive variable operations dry-run by default, fully redacted API tokens, and removed comment bodies and resource URLs from write logs.
+- Confined MCP-generated files to `FRAMEPROOF_OUTPUT_ROOT` with traversal and symlink-escape protection.
 - Added bounded API timeouts, retries, response sizes, schema validation, credential redaction, and stricter Tinify host and redirect handling.
 - Hardened browser capture diagnostics and URL redaction, documented cookie and artifact sensitivity, and made CI secret scanning work without pull-request comment permissions.
 

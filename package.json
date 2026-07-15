@@ -1,12 +1,12 @@
 {
-  "name": "figma-scaler",
+  "name": "frameproof",
   "version": "0.1.0",
   "private": true,
   "description": "Pixel-perfect Figma token, orchestration, and visual gate toolkit for AI-assisted React/Astro development",
   "type": "module",
   "bin": {
-    "figma-scaler": "./dist/cli.js",
-    "mcp": "./dist/mcp/server.js"
+    "frameproof": "./dist/cli.js",
+    "frameproof-mcp": "./dist/mcp/server.js"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

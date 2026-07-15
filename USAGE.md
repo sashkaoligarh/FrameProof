@@ -1,6 +1,6 @@
 # Usage Reference
 
-This reference describes the current TypeScript source. Build a source clone with `npm ci && npm run build`, then invoke the CLI as `node dist/cli.js`. Examples using a globally installed `figma-scaler` binary are equivalent only if you have explicitly linked or installed this checkout.
+This reference describes the current TypeScript source. Build a source clone with `npm ci && npm run build`, then invoke the CLI as `node dist/cli.js`. Examples using a globally installed `frameproof` binary are equivalent only if you have explicitly linked or installed this checkout.
 
 The project does not load `.env` files. Export variables in the shell, process manager, or MCP client configuration.
 
@@ -10,7 +10,7 @@ The project does not load `.env` files. Export variables in the shell, process m
 node dist/cli.js doctor [--json]
 ```
 
-`doctor` checks Node.js `^20.19.0` or `>=22.12.0`, `FIGMA_TOKEN` presence, Chrome/Chromium discovery, and whether the configured `FIGMA_SCALER_OUTPUT_ROOT` is writable and usable as the MCP sandbox. Node.js 21 and 22.0-22.11 are rejected to match the locked Vite requirement. The command reports only credential presence, never values. A missing `TINYJPG_TOKEN` is a non-blocking warning because compression is optional. The command exits nonzero only when a blocking check fails; `--json` emits `{ "ok", "checks" }` for automation.
+`doctor` checks Node.js `^20.19.0` or `>=22.12.0`, `FIGMA_TOKEN` presence, Chrome/Chromium discovery, and whether the configured `FRAMEPROOF_OUTPUT_ROOT` is writable and usable as the MCP sandbox. Node.js 21 and 22.0-22.11 are rejected to match the locked Vite requirement. The command reports only credential presence, never values. A missing `TINYJPG_TOKEN` is a non-blocking warning because compression is optional. The command exits nonzero only when a blocking check fails; `--json` emits `{ "ok", "checks" }` for automation.
 
 ## CLI: Parse
 
@@ -98,9 +98,9 @@ Parameter notation below uses `?` for optional parameters. Defaults are shown as
 
 `categories` accepts `colors`, `gradients`, `typography`, `spacing`, `radii`, `shadows`, `images`, and `components`; the default excludes the potentially large `images` and `components` categories. `search_token.category` accepts `color`, `typography`, `spacing`, `radius`, `shadow`, or `all`. Image format accepts `svg`, `png`, `jpg`, or `pdf`.
 
-These tools do not mutate the remote Figma file, but several write local files. MCP output paths are resolved below `FIGMA_SCALER_OUTPUT_ROOT`, which defaults to the server working directory unless that directory is the filesystem root or user home. Broad roots, traversal, and symlink escapes are rejected.
+These tools do not mutate the remote Figma file, but several write local files. MCP output paths are resolved below `FRAMEPROOF_OUTPUT_ROOT`, which defaults to the server working directory unless that directory is the filesystem root or user home. Broad roots, traversal, and symlink escapes are rejected.
 
-`plan_pixel_perfect_workflow` returns `mode: "plan_only"`. It fetches Figma data, inventories sections, and creates only `RUNBOOK.md` and `inventory.json` under `output_dir`, resolved relative to `project_root`. Its `required_artifacts`, `final_gate_argv`, and POSIX-only display commands describe work to perform separately; the tool does not edit application code, create those extraction/gate artifacts, capture the live page, execute commands, or prove visual completion. Set `cli_command` to an argv prefix such as `["node", "/checkout/dist/cli.js"]` when automatic source-checkout detection is unavailable. `project_root` and all generated paths must remain inside `FIGMA_SCALER_OUTPUT_ROOT`. `max_passes` is an integer from 1 to 100; `selectors` accepts up to 100 non-empty selectors of at most 512 characters each.
+`plan_pixel_perfect_workflow` returns `mode: "plan_only"`. It fetches Figma data, inventories sections, and creates only `RUNBOOK.md` and `inventory.json` under `output_dir`, resolved relative to `project_root`. Its `required_artifacts`, `final_gate_argv`, and POSIX-only display commands describe work to perform separately; the tool does not edit application code, create those extraction/gate artifacts, capture the live page, execute commands, or prove visual completion. Set `cli_command` to an argv prefix such as `["node", "/checkout/dist/cli.js"]` when automatic source-checkout detection is unavailable. `project_root` and all generated paths must remain inside `FRAMEPROOF_OUTPUT_ROOT`. `max_passes` is an integer from 1 to 100; `selectors` accepts up to 100 non-empty selectors of at most 512 characters each.
 
 ### Variables Tools (6)
 
@@ -113,7 +113,7 @@ These tools do not mutate the remote Figma file, but several write local files. 
 | `delete_variable` | **Remote write unless dry-run** | `file_id`, `variable_id`, `dry_run?=true` |
 | `sync_variables` | **Remote batch write unless dry-run** | `file_id`, `variable_collections?`, `variable_modes?`, `variables?`, `variable_mode_values?`, `dry_run?=true` |
 
-Variables API operations require the relevant Figma Enterprise plan and `file_variables:read` or `file_variables:write` scope. `resolved_type` accepts `COLOR`, `FLOAT`, `STRING`, or `BOOLEAN`. Color mode values accept hex strings or RGBA objects where supported. Non-dry-run mutations also require `FIGMA_SCALER_ENABLE_WRITES=1`.
+Variables API operations require the relevant Figma Enterprise plan and `file_variables:read` or `file_variables:write` scope. `resolved_type` accepts `COLOR`, `FLOAT`, `STRING`, or `BOOLEAN`. Color mode values accept hex strings or RGBA objects where supported. Non-dry-run mutations also require `FRAMEPROOF_ENABLE_WRITES=1`.
 
 `sync_variables` action objects use `action: CREATE | UPDATE | DELETE` and the exact snake_case fields shown by the MCP schema: `variable_collection_id`, `resolved_type`, `hidden_from_publishing`, `variable_id`, and `mode_id`.
 
@@ -126,7 +126,7 @@ Variables API operations require the relevant Figma Enterprise plan and `file_va
 | `update_dev_resource` | **Remote write** | `resource_id`, `name?`, `url?` |
 | `delete_dev_resource` | **Remote write** | `file_id`, `resource_id` |
 
-These require `file_dev_resources:read` or `file_dev_resources:write` as appropriate. Figma limits dev resources to 10 per node. Create, update, and delete also require `FIGMA_SCALER_ENABLE_WRITES=1`.
+These require `file_dev_resources:read` or `file_dev_resources:write` as appropriate. Figma limits dev resources to 10 per node. Create, update, and delete also require `FRAMEPROOF_ENABLE_WRITES=1`.
 
 ### Comment Tools (3)
 
@@ -136,7 +136,7 @@ These require `file_dev_resources:read` or `file_dev_resources:write` as appropr
 | `post_comment` | **Remote write** | `file_id`, `message`, `node_id?`, `x?`, `y?` |
 | `reply_to_comment` | **Remote write** | `file_id`, `comment_id`, `message` |
 
-These require `comments:read` or `comments:write` as appropriate. Posting and replying also require `FIGMA_SCALER_ENABLE_WRITES=1`. If `post_comment.node_id` is supplied, omitted `x` and `y` offsets default to zero.
+These require `comments:read` or `comments:write` as appropriate. Posting and replying also require `FRAMEPROOF_ENABLE_WRITES=1`. If `post_comment.node_id` is supplied, omitted `x` and `y` offsets default to zero.
 
 ### Prompts (5)
 
@@ -158,12 +158,12 @@ These require `comments:read` or `comments:write` as appropriate. Posting and re
 | `TINYJPG_TOKEN` | Only for compression | Used when compression is requested; without it, eligible tools warn and save the original. |
 | `CHROME_BIN` | Gate if browser is not auto-detected | Absolute Chrome executable path. |
 | `CHROMIUM_BIN` | Gate if browser is not auto-detected | Absolute Chromium executable path. |
-| `FIGMA_SCALER_COOKIES_JSON` | No | JSON cookie array for authenticated live-page capture. Treat cookie values as secrets. |
-| `FIGMA_SCALER_OUTPUT_ROOT` | No | Safe root for MCP file-producing handlers; defaults to a non-broad process working directory. Filesystem root and user home are rejected. Absolute paths must be within it. Parser and gate output flags remain separate. |
-| `FIGMA_SCALER_ENABLE_WRITES` | No | Remote mutations are blocked unless the value is exactly `1`; write tools remain listed but return an error while disabled. |
+| `FRAMEPROOF_COOKIES_JSON` | No | JSON cookie array for authenticated live-page capture. Treat cookie values as secrets. |
+| `FRAMEPROOF_OUTPUT_ROOT` | No | Safe root for MCP file-producing handlers; defaults to a non-broad process working directory. Filesystem root and user home are rejected. Absolute paths must be within it. Parser and gate output flags remain separate. |
+| `FRAMEPROOF_ENABLE_WRITES` | No | Remote mutations are blocked unless the value is exactly `1`; write tools remain listed but return an error while disabled. |
 
 TinyJPG/Tinify receives image bytes when compression is enabled. Compression failure is non-blocking and preserves the original image where the calling tool supports fallback.
 
 ## Artifact Privacy
 
-The default `.figma/`, `.pixel-perfect/`, and `figma-output/` paths are gitignored. They can contain proprietary tokens, screenshots, image assets, node structure, page text, URLs, cookies reflected in page state, and DOM diagnostics. Git ignores reduce accidental commits but are not access control; choose an explicit private `FIGMA_SCALER_OUTPUT_ROOT` for MCP, choose private CLI output paths, and delete artifacts according to the design owner's retention requirements.
+The default `.figma/`, `.pixel-perfect/`, and `figma-output/` paths are gitignored. They can contain proprietary tokens, screenshots, image assets, node structure, page text, URLs, cookies reflected in page state, and DOM diagnostics. Git ignores reduce accidental commits but are not access control; choose an explicit private `FRAMEPROOF_OUTPUT_ROOT` for MCP, choose private CLI output paths, and delete artifacts according to the design owner's retention requirements.

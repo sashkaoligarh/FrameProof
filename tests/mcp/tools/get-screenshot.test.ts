@@ -85,8 +85,8 @@ describe('handleGetScreenshot', () => {
   let outputRoot: string;
 
   beforeEach(() => {
-    outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-screenshot-'));
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputRoot;
+    outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-screenshot-'));
+    process.env.FRAMEPROOF_OUTPUT_ROOT = outputRoot;
     cache = new TokenCache();
     mockFetchFn = vi.fn().mockResolvedValue(makeFetchResult());
     vi.clearAllMocks();
@@ -100,7 +100,7 @@ describe('handleGetScreenshot', () => {
 
   afterEach(() => {
     delete process.env.FIGMA_TOKEN;
-    delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
+    delete process.env.FRAMEPROOF_OUTPUT_ROOT;
     fs.rmSync(outputRoot, { recursive: true, force: true });
   });
 

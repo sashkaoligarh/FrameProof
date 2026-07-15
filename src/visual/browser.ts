@@ -198,7 +198,7 @@ export function findChromeExecutable(): string | undefined {
 }
 
 function readCaptureCookies(): Array<{ name: string; value: string; url: string }> {
-  const serialized = process.env.FIGMA_SCALER_COOKIES_JSON;
+  const serialized = process.env.FRAMEPROOF_COOKIES_JSON;
   if (!serialized) return [];
 
   try {

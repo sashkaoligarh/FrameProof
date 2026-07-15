@@ -64,7 +64,7 @@ function buildColorsDTCG(colors: ColorToken[]): Record<string, unknown> {
       $type: 'color',
       $value: color.value_hex,
       $extensions: {
-        'figma-scaler': {
+        frameproof: {
           node_id: color.node_id,
           usage_count: color.usage_count,
           rgba: color.value_rgba,
@@ -88,7 +88,7 @@ function buildTypographyDTCG(tokens: TypographyToken[]): Record<string, unknown>
         letter_spacing: `${t.letter_spacing}px`,
       },
       $extensions: {
-        'figma-scaler': {
+        frameproof: {
           node_id: t.node_id,
           usage_count: t.usage_count,
           font_style: t.font_style,
@@ -109,7 +109,7 @@ function buildSpacingDTCG(tokens: SpacingToken[]): Record<string, unknown> {
       $type: 'dimension',
       $value: `${s.value}px`,
       $extensions: {
-        'figma-scaler': {
+        frameproof: {
           source: s.source,
           usage_count: s.usage_count,
         },
@@ -133,7 +133,7 @@ function buildRadiusDTCG(tokens: RadiusToken[]): Record<string, unknown> {
       $type: 'dimension',
       $value: `${r.value}px`,
       $extensions: {
-        'figma-scaler': {
+        frameproof: {
           is_per_corner: r.is_per_corner,
           usage_count: r.usage_count,
         },
@@ -156,7 +156,7 @@ function buildShadowsDTCG(tokens: ShadowToken[]): Record<string, unknown> {
         color: s.color_hex,
       },
       $extensions: {
-        'figma-scaler': {
+        frameproof: {
           node_id: s.node_id,
           shadow_type: s.shadow_type,
           css: s.css,
@@ -180,7 +180,7 @@ function buildGradientsDTCG(tokens: GradientToken[]): Record<string, unknown> {
         })),
       },
       $extensions: {
-        'figma-scaler': {
+        frameproof: {
           node_id: g.node_id,
           handle_positions: g.handle_positions,
           stops_rgba: g.stops.map((s) => s.color_rgba),

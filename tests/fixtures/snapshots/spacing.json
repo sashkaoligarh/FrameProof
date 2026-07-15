@@ -3,7 +3,7 @@
     "$type": "dimension",
     "$value": "8px",
     "$extensions": {
-      "figma-scaler": {
+      "frameproof": {
         "source": "padding",
         "usage_count": 3
       }
@@ -13,7 +13,7 @@
     "$type": "dimension",
     "$value": "12px",
     "$extensions": {
-      "figma-scaler": {
+      "frameproof": {
         "source": "item_spacing",
         "usage_count": 1
       }
@@ -23,7 +23,7 @@
     "$type": "dimension",
     "$value": "16px",
     "$extensions": {
-      "figma-scaler": {
+      "frameproof": {
         "source": "padding",
         "usage_count": 6
       }

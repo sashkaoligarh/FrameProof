@@ -20,7 +20,7 @@ type RawNode = Record<string, unknown>;
 export const pixelPerfectOrchestratorSchema = {
   file_id: z.string().describe('Figma file ID or full Figma URL. A file/page/root link is enough; all frames/sections are inventoried automatically.'),
   node_id: z.string().optional().describe('Optional root node ID. If omitted, the whole file/page top-level frames are inventoried.'),
-  project_root: z.string().min(1).optional().describe('Target React/Astro project root path inside FIGMA_SCALER_OUTPUT_ROOT.'),
+  project_root: z.string().min(1).optional().describe('Target React/Astro project root path inside FRAMEPROOF_OUTPUT_ROOT.'),
   framework: z.enum(FRAMEWORKS).optional().default('auto').describe('Target framework: astro, react, next, or auto.'),
   architecture: z.enum(ARCHITECTURES).optional().default('feature-sliced').describe('Preferred code architecture.'),
   route: z.string().optional().describe('Live route, for example /pricing.'),
@@ -543,7 +543,7 @@ function resolveCliCommand(explicitCommand: string[] | undefined): string[] {
     const cliEntry = path.resolve(path.dirname(serverEntry), '..', 'cli.js');
     if (fs.existsSync(cliEntry)) return [process.execPath, cliEntry];
   }
-  return ['figma-scaler'];
+  return ['frameproof'];
 }
 
 function posixShellQuote(value: string): string {

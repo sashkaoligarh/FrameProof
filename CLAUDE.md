@@ -1,4 +1,4 @@
-# figma_scaler Development Guidelines
+# FrameProof Development Guidelines
 
 ## Active Technologies
 - TypeScript 5.x in strict mode with ESM.

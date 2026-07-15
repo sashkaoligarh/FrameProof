@@ -8,7 +8,7 @@ import { captureLiveViewport, findChromeExecutable } from '../../../src/visual/b
 
 describe('visual browser capture', () => {
   it.skipIf(!findChromeExecutable())('captures the selector at the requested viewport with deterministic state', async () => {
-    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-browser-'));
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-browser-'));
     const server = http.createServer((request, response) => {
       if (request.url?.startsWith('/broken.png')) {
         request.socket.destroy();
@@ -62,8 +62,8 @@ describe('visual browser capture', () => {
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('Expected TCP server address');
     const origin = `http://127.0.0.1:${address.port}`;
-    const previousCookies = process.env.FIGMA_SCALER_COOKIES_JSON;
-    process.env.FIGMA_SCALER_COOKIES_JSON = JSON.stringify([
+    const previousCookies = process.env.FRAMEPROOF_COOKIES_JSON;
+    process.env.FRAMEPROOF_COOKIES_JSON = JSON.stringify([
       { name: 'capture', value: 'enabled', url: origin },
     ]);
 
@@ -93,15 +93,15 @@ describe('visual browser capture', () => {
       expect(result.pageErrors.join('\n')).toContain('?[redacted]#[redacted]');
       expect(JSON.stringify(result)).not.toMatch(/page-secret|console-secret|request-secret|error-secret/);
     } finally {
-      if (previousCookies === undefined) delete process.env.FIGMA_SCALER_COOKIES_JSON;
-      else process.env.FIGMA_SCALER_COOKIES_JSON = previousCookies;
+      if (previousCookies === undefined) delete process.env.FRAMEPROOF_COOKIES_JSON;
+      else process.env.FRAMEPROOF_COOKIES_JSON = previousCookies;
       await close(server);
       fs.rmSync(outputDir, { recursive: true, force: true });
     }
   }, 20_000);
 
   it.skipIf(!findChromeExecutable())('bounds font readiness when document.fonts.ready never settles', async () => {
-    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-browser-fonts-'));
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-browser-fonts-'));
     const server = http.createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end(`<!doctype html>

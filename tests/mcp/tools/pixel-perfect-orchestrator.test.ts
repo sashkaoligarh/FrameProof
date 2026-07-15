@@ -24,12 +24,12 @@ const emptyTokens: AllTokens = {
 
 describe('handlePixelPerfectOrchestrator', () => {
   afterEach(() => {
-    delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
+    delete process.env.FRAMEPROOF_OUTPUT_ROOT;
   });
 
   it('writes an explicitly plan-only pixel-perfect runbook', async () => {
-    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-orchestrator-'));
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputDir;
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-orchestrator-'));
+    process.env.FRAMEPROOF_OUTPUT_ROOT = outputDir;
     const fetchFn = vi.fn().mockResolvedValue({
       file: {
         file_id: 'file-1',
@@ -69,8 +69,8 @@ describe('handlePixelPerfectOrchestrator', () => {
   });
 
   it('discovers full-page sections and breakpoint variants from one Figma file link', async () => {
-    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-orchestrator-'));
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputDir;
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-orchestrator-'));
+    process.env.FRAMEPROOF_OUTPUT_ROOT = outputDir;
     const fetchFn = vi.fn().mockResolvedValue({
       file: {
         file_id: 'file-1',
@@ -103,6 +103,7 @@ describe('handlePixelPerfectOrchestrator', () => {
     expect(result.final_gate_argv[0]).toContain('--figma-url-desktop');
     expect(result.final_gate_argv[0]).toContain('--figma-url-tablet');
     expect(result.final_gate_argv[0]).toContain('--figma-url-mobile');
+    expect(result.final_gate_argv[0][0]).toBe('frameproof');
     expect(argumentAfter(result.final_gate_argv[0], '--viewports')).toBe('desktop,tablet,mobile,ultrawide');
     expect(result.acceptance).toContain('Ultrawide is behavior-only and cannot provide pixel acceptance; every available exact breakpoint must pass size and RMSE checks.');
     expect(fs.existsSync(result.inventory_path)).toBe(true);
@@ -110,9 +111,9 @@ describe('handlePixelPerfectOrchestrator', () => {
   });
 
   it('roots generated artifacts under project_root and shell-quotes commands', async () => {
-    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-orchestrator-'));
+    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-orchestrator-'));
     const projectRoot = path.join(outputRoot, "project's ui");
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputRoot;
+    process.env.FRAMEPROOF_OUTPUT_ROOT = outputRoot;
     const fetchFn = vi.fn().mockResolvedValue({
       file: {
         file_id: 'file-1',
@@ -159,8 +160,8 @@ describe('handlePixelPerfectOrchestrator', () => {
   });
 
   it('groups breakpoint children when an explicit root contains desktop, tablet, and mobile variants', async () => {
-    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-orchestrator-'));
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputRoot;
+    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-orchestrator-'));
+    process.env.FRAMEPROOF_OUTPUT_ROOT = outputRoot;
     const explicitRoot = makeFrame('1:0', 'Pricing variants', 1440, 1200, [
       makeFrame('1:1', 'Pricing Desktop', 1440, 1200, [
         makeFrame('1:10', 'Hero', 1440, 600),
@@ -214,8 +215,8 @@ describe('handlePixelPerfectOrchestrator', () => {
   });
 
   it('does not group explicit-root children as breakpoints from widths alone', async () => {
-    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-orchestrator-'));
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputRoot;
+    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-orchestrator-'));
+    process.env.FRAMEPROOF_OUTPUT_ROOT = outputRoot;
     const explicitRoot = makeFrame('1:0', 'Pricing variants', 1440, 1200, [
       makeFrame('1:1', 'Option A', 1440, 1200),
       makeFrame('2:1', 'Option B', 1024, 1400),
@@ -244,8 +245,8 @@ describe('handlePixelPerfectOrchestrator', () => {
   });
 
   it('uses only available exact viewports and does not force a missing tablet', async () => {
-    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-orchestrator-'));
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputRoot;
+    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-orchestrator-'));
+    process.env.FRAMEPROOF_OUTPUT_ROOT = outputRoot;
     const document = {
       id: '0:0',
       name: 'Document',
@@ -274,8 +275,8 @@ describe('handlePixelPerfectOrchestrator', () => {
   });
 
   it('detects the source-checkout CLI when invoked from dist/mcp/server.js', async () => {
-    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-orchestrator-'));
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = outputRoot;
+    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-orchestrator-'));
+    process.env.FRAMEPROOF_OUTPUT_ROOT = outputRoot;
     const checkout = path.join(outputRoot, 'checkout');
     const distMcp = path.join(checkout, 'dist', 'mcp');
     fs.mkdirSync(distMcp, { recursive: true });

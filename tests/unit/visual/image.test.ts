@@ -7,7 +7,7 @@ import { comparePngRmse, cropPng, identifyPng } from '../../../src/visual/image.
 
 describe('visual image comparison', () => {
   it('identifies PNG dimensions', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-image-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-image-'));
     const imagePath = path.join(dir, 'image.png');
     writePng(imagePath, 3, 2, [255, 255, 255, 255]);
 
@@ -15,7 +15,7 @@ describe('visual image comparison', () => {
   });
 
   it('returns zero RMSE for identical images', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-image-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-image-'));
     const aPath = path.join(dir, 'a.png');
     const bPath = path.join(dir, 'b.png');
     writePng(aPath, 2, 2, [10, 20, 30, 255]);
@@ -30,7 +30,7 @@ describe('visual image comparison', () => {
   });
 
   it('reports size mismatch without comparing pixels', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-image-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-image-'));
     const aPath = path.join(dir, 'a.png');
     const bPath = path.join(dir, 'b.png');
     writePng(aPath, 2, 2, [10, 20, 30, 255]);
@@ -45,7 +45,7 @@ describe('visual image comparison', () => {
   });
 
   it('crops PNG images for tolerance comparisons', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-image-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-image-'));
     const sourcePath = path.join(dir, 'source.png');
     const cropPath = path.join(dir, 'crop.png');
     writePng(sourcePath, 4, 3, [10, 20, 30, 255]);

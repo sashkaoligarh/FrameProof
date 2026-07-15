@@ -7,8 +7,8 @@ Contributions are welcome through GitHub issues and pull requests.
 Prerequisites are Node.js `^20.19.0` or `>=22.12.0` and npm. Node.js 21 and 22.0-22.11 do not satisfy the locked toolchain requirements.
 
 ```bash
-git clone https://github.com/sashkaoligarh/mcp-figma.git
-cd mcp-figma
+git clone https://github.com/sashkaoligarh/frameproof.git
+cd frameproof
 npm ci
 npm test
 npm run lint

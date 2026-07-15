@@ -12,37 +12,37 @@ describe('secure output paths', () => {
   let root: string;
 
   beforeEach(() => {
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-output-root-'));
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = root;
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-output-root-'));
+    process.env.FRAMEPROOF_OUTPUT_ROOT = root;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
+    delete process.env.FRAMEPROOF_OUTPUT_ROOT;
     fs.rmSync(root, { recursive: true, force: true });
   });
 
   it('uses a project working directory when no root is configured', () => {
-    delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
+    delete process.env.FRAMEPROOF_OUTPUT_ROOT;
     vi.spyOn(process, 'cwd').mockReturnValue(root);
 
     expect(resolveOutputPath('tokens.json')).toBe(path.join(root, 'tokens.json'));
   });
 
   it('rejects filesystem root and user home as configured output roots', () => {
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = path.parse(root).root;
+    process.env.FRAMEPROOF_OUTPUT_ROOT = path.parse(root).root;
     expect(() => resolveOutputPath('tokens.json')).toThrow(/narrower project directory/i);
 
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = os.homedir();
+    process.env.FRAMEPROOF_OUTPUT_ROOT = os.homedir();
     expect(() => resolveOutputPath('tokens.json')).toThrow(/narrower project directory/i);
   });
 
   it('gives actionable guidance when the default working directory is unsafe', () => {
-    delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
+    delete process.env.FRAMEPROOF_OUTPUT_ROOT;
     vi.spyOn(process, 'cwd').mockReturnValue(path.parse(root).root);
 
     expect(() => resolveOutputPath('tokens.json')).toThrow(
-      /FIGMA_SCALER_OUTPUT_ROOT.*launch figma-scaler inside a project/i,
+      /FRAMEPROOF_OUTPUT_ROOT.*launch frameproof inside a project/i,
     );
   });
 
@@ -67,7 +67,7 @@ describe('secure output paths', () => {
   });
 
   it('rejects an existing symlink that escapes the configured root', () => {
-    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-outside-'));
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-outside-'));
     try {
       fs.symlinkSync(outside, path.join(root, 'escape'), 'dir');
       expect(() => atomicWriteOutputFile('escape/secret.txt', 'blocked')).toThrow(/symbolic link/i);

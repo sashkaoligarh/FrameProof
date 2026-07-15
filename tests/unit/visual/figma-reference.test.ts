@@ -13,19 +13,19 @@ import type { AllTokens, FigmaFile } from '../../../src/types/tokens.js';
 
 const temporaryDirs: string[] = [];
 const previousFigmaToken = process.env.FIGMA_TOKEN;
-const previousOutputRoot = process.env.FIGMA_SCALER_OUTPUT_ROOT;
+const previousOutputRoot = process.env.FRAMEPROOF_OUTPUT_ROOT;
 
 afterEach(() => {
   if (previousFigmaToken === undefined) delete process.env.FIGMA_TOKEN;
   else process.env.FIGMA_TOKEN = previousFigmaToken;
-  if (previousOutputRoot === undefined) delete process.env.FIGMA_SCALER_OUTPUT_ROOT;
-  else process.env.FIGMA_SCALER_OUTPUT_ROOT = previousOutputRoot;
+  if (previousOutputRoot === undefined) delete process.env.FRAMEPROOF_OUTPUT_ROOT;
+  else process.env.FRAMEPROOF_OUTPUT_ROOT = previousOutputRoot;
   for (const dir of temporaryDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 describe('visual reference files', () => {
   it('accepts PNG bytes regardless of the source extension', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-reference-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-reference-'));
     const sourcePath = path.join(dir, 'reference.bin');
     const outputDir = path.join(dir, 'output');
     writePng(sourcePath, 2, 3);
@@ -37,7 +37,7 @@ describe('visual reference files', () => {
   });
 
   it('rejects a non-PNG reference with an actionable error', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-reference-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-reference-'));
     const sourcePath = path.join(dir, 'reference.jpg');
     fs.writeFileSync(sourcePath, Buffer.from([0xff, 0xd8, 0xff, 0xdb]));
 
@@ -46,7 +46,7 @@ describe('visual reference files', () => {
   });
 
   it('rejects malformed PNG bytes with the source path', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-reference-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-reference-'));
     const sourcePath = path.join(dir, 'broken.png');
     fs.writeFileSync(sourcePath, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
 
@@ -55,11 +55,11 @@ describe('visual reference files', () => {
   });
 
   it('exports Figma image and node artifacts directly into the gate directory outside the MCP output root', async () => {
-    const sandboxRoot = temporaryDir('figma-scaler-sandbox-');
-    const gateRoot = temporaryDir('figma-scaler-standalone-gate-');
+    const sandboxRoot = temporaryDir('frameproof-sandbox-');
+    const gateRoot = temporaryDir('frameproof-standalone-gate-');
     const outputDir = path.join(gateRoot, 'run', 'desktop', 'figma');
     process.env.FIGMA_TOKEN = 'test-token';
-    process.env.FIGMA_SCALER_OUTPUT_ROOT = sandboxRoot;
+    process.env.FRAMEPROOF_OUTPUT_ROOT = sandboxRoot;
 
     const rawNode = {
       id: '1:2',
@@ -120,7 +120,7 @@ describe('visual reference files', () => {
 
   it('requires a node ID before fetching or writing a Figma reference', async () => {
     process.env.FIGMA_TOKEN = 'test-token';
-    const outputDir = path.join(temporaryDir('figma-scaler-reference-'), 'output');
+    const outputDir = path.join(temporaryDir('frameproof-reference-'), 'output');
 
     await expect(exportFigmaReference(
       'https://www.figma.com/design/file-1/Fixture',

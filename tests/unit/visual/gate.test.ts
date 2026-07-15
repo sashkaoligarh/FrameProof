@@ -328,7 +328,7 @@ async function defaultCapture(options: CaptureLiveOptions): Promise<LiveCaptureR
 }
 
 function temporaryDir(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-scaler-gate-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'frameproof-gate-'));
   temporaryDirs.push(dir);
   return dir;
 }
